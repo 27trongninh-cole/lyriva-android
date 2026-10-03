@@ -116,7 +116,18 @@ object LrcParser {
                 )
             }
         }
-        return LrcResult(result, meta)
+        // áp dụng //ẩn// lên lời (vẫn giữ mốc thời gian)
+        val hm = Hide.masks(result.map { it.s })
+        val hidden = result.mapIndexed { k, x ->
+            val m = hm[k]
+            if (m == null) {
+                x
+            } else {
+                val r = Hide.apply(x.s, m, x.w)
+                LrcLine(x.t, r.s, if (x.w != null && r.w.isNotEmpty()) r.w else null)
+            }
+        }
+        return LrcResult(hidden, meta)
     }
 
     /** Số ký tự đã tô màu của dòng tại thời điểm [t] (theo thẻ từ). */

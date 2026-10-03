@@ -3,8 +3,14 @@
 Ứng dụng tạo video lyrics TikTok từ nhạc + lời: tạo LRC bằng cách chạm theo nhịp, dựng video 9:16 xuất MP4.
 Kotlin + Jetpack Compose, minSdk 29, applicationId `com.lyriva.ninfinity`.
 
-Tiến độ: **P0** (khung dự án, CI, giao diện cố định) và **P1** (lõi LRC: đọc/ghi LRC, LRC nâng cao, SRT, WAV, lưu dự án) đã xong.
-Tiếp theo: P2 (giải mã nhạc, sóng, đồng bộ), P3 (renderer + font), P4 (thumbnail), P5 (xuất MP4), P6 (video nền).
+Bản này đã có đủ P0 đến P6, làm theo `lyriva-11-4.html`:
+
+- **Tạo LRC** (3 trang): chọn nhạc/video, kéo cắt đoạn trên sóng nhạc, nhập lời, màn đồng bộ chạm theo nhịp, xuất LRC / LRC nâng cao / SRT / WAV vào `Download/LYRIVA`.
+- **Dựng video**: xem thử, Vietsub, `//ẩn//`, romanized, video nền (thu phóng, dời, độ tối), thumbnail + lưới 3 cột + ảnh bìa PNG, xuất **MP4 H.264 + AAC** vào `Movies/LYRIVA`.
+- Xuất video chạy trong foreground service, dựng từng khung 30fps nên không rớt khung.
+- Mọi màn hình vừa khít một khung hình, không cuộn dọc.
+
+Chưa kiểm chứng trên máy thật (xem mục cuối).
 
 ## Đưa lên GitHub
 
@@ -33,3 +39,10 @@ Từ lần build sau, APK release tự được ký bằng khóa này.
 ## Build trên máy (tùy chọn)
 
 Mở thư mục bằng Android Studio (bản mới), nó tự tạo Gradle wrapper. CI không cần wrapper vì dùng `gradle/actions/setup-gradle`.
+
+## Những điểm cần kiểm chứng khi chạy thật
+
+- Lần build đầu có thể có lỗi biên dịch nhỏ. Gửi log dòng đỏ trong Actions để sửa.
+- **Tải font:** URL nằm trong `render/Fonts.kt` (`FontCatalog`), lấy từ kho `google/fonts` trên GitHub. Nếu tải lỗi, sửa URL ở đó.
+- **Video nền** lấy khung bằng `MediaMetadataRetriever` nên xuất chậm hơn khi bật nền.
+- Bảng cài đặt ở tab Dựng video cao cố định (khoảng 42% màn hình). Máy màn hình ngắn dưới 700dp có thể phải cuộn nhẹ trong bảng.

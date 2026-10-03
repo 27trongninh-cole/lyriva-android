@@ -26,10 +26,10 @@ data class Project(
     val cutEnd: Double = 0.0,
     // lời và đồng bộ
     val lyricsText: String = "",
-    val syncMode: SyncMode = SyncMode.LINE,
+    val syncMode: SyncMode = SyncMode.WORD,
     val firstTapMarks: Boolean = false,
     val marks: List<Double> = emptyList(),
-    val latencyMs: Int = 0,
+    val latencyMs: Int = 150,
     // LRC đang dùng để dựng video
     val lrcText: String = "",
     // thông tin bài hát
@@ -38,16 +38,25 @@ data class Project(
     val language: Lang = Lang.EN,
     val originalLyrics: String = "",
     val aspect: Aspect = Aspect.V,
+    // Vietsub và romanized
+    val vietsubText: String = "",
+    val vietsubOn: Boolean = true,
+    val romanOn: Boolean = true,
     // video cover làm nền
     val bgEnabled: Boolean = true,
     val bgUri: String? = null,
     val bgOffset: Double = 0.0,
     val bgFit: BgFit = BgFit.COVER,
-    val bgDim: Int = 50,
+    val bgZoom: Int = 100,
+    val bgPanX: Int = 0,
+    val bgPanY: Int = 0,
+    val bgDim: Int = 70,
     val credit: String = "",
+    // hiện lời sớm (ms)
+    val leadMs: Int = 100,
     // thumbnail đầu video
     val thumbEnabled: Boolean = true,
-    val thumbDuration: Double = 0.1,
+    val thumbDuration: Double = 0.02,
     val thumbGridPos: Int = 0
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
@@ -67,12 +76,19 @@ data class Project(
         put("language", language.name)
         put("originalLyrics", originalLyrics)
         put("aspect", aspect.name)
+        put("vietsubText", vietsubText)
+        put("vietsubOn", vietsubOn)
+        put("romanOn", romanOn)
         put("bgEnabled", bgEnabled)
         put("bgUri", bgUri ?: JSONObject.NULL)
         put("bgOffset", bgOffset)
         put("bgFit", bgFit.name)
+        put("bgZoom", bgZoom)
+        put("bgPanX", bgPanX)
+        put("bgPanY", bgPanY)
         put("bgDim", bgDim)
         put("credit", credit)
+        put("leadMs", leadMs)
         put("thumbEnabled", thumbEnabled)
         put("thumbDuration", thumbDuration)
         put("thumbGridPos", thumbGridPos)
@@ -106,12 +122,19 @@ data class Project(
                 language = enumOr(j.strOrNull("language"), d.language),
                 originalLyrics = j.optString("originalLyrics", d.originalLyrics),
                 aspect = enumOr(j.strOrNull("aspect"), d.aspect),
+                vietsubText = j.optString("vietsubText", d.vietsubText),
+                vietsubOn = j.optBoolean("vietsubOn", d.vietsubOn),
+                romanOn = j.optBoolean("romanOn", d.romanOn),
                 bgEnabled = j.optBoolean("bgEnabled", d.bgEnabled),
                 bgUri = j.strOrNull("bgUri"),
                 bgOffset = j.optDouble("bgOffset", d.bgOffset),
                 bgFit = enumOr(j.strOrNull("bgFit"), d.bgFit),
+                bgZoom = j.optInt("bgZoom", d.bgZoom),
+                bgPanX = j.optInt("bgPanX", d.bgPanX),
+                bgPanY = j.optInt("bgPanY", d.bgPanY),
                 bgDim = j.optInt("bgDim", d.bgDim),
                 credit = j.optString("credit", d.credit),
+                leadMs = j.optInt("leadMs", d.leadMs),
                 thumbEnabled = j.optBoolean("thumbEnabled", d.thumbEnabled),
                 thumbDuration = j.optDouble("thumbDuration", d.thumbDuration),
                 thumbGridPos = j.optInt("thumbGridPos", d.thumbGridPos)

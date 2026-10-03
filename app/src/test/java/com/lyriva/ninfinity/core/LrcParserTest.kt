@@ -46,3 +46,19 @@ class LrcParserTest {
         assertEquals(1, r.items.size)
     }
 }
+
+class HideTest {
+    @org.junit.Test fun hidesPairInsideLine() {
+        val r = LrcParser.parse("[00:01.00]Hello //secret// world")
+        org.junit.Assert.assertEquals("Hello world", r.items[0].s)
+    }
+
+    @org.junit.Test fun hidesAcrossLines() {
+        val r = LrcParser.parse("[00:01.00]one //two\n[00:02.00]three\n[00:03.00]four// five")
+        org.junit.Assert.assertEquals(listOf("one", "", "five"), r.items.map { it.s })
+    }
+
+    @org.junit.Test fun linesHelper() {
+        org.junit.Assert.assertEquals(listOf("a b"), Hide.lines(listOf("a //x// b")))
+    }
+}
