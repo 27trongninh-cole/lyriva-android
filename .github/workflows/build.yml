@@ -1,45 +1,91 @@
-name: Build APK
+name: Build LYRIVA APK
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch: {}
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # cần để tạo GitHub Release
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: '8.9'
 
-      - name: Giải mã keystore để ký APK
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/release.keystore
-
-      - name: Build APK release
+      # Có secrets thì ký bằng khóa riêng, không có thì ký bằng app/debug.keystore (vẫn cài được)
+      - name: Chuẩn bị khóa ký release
         env:
-          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease --no-daemon
+          KS_B64: ${{ secrets.LYRIVA_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "LYRIVA_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "Đã tìm thấy khóa ký riêng."
+          else
+            echo "Chưa có secrets, release sẽ ký bằng khóa debug dùng chung."
+          fi
 
-      - name: Tạo Release và đính kèm APK
+      - name: Chạy unit test
+        continue-on-error: true
+        run: gradle testDebugUnitTest --console=plain
+
+      - name: Build APK debug và release
+        env:
+          LYRIVA_KEYSTORE_PASSWORD: ${{ secrets.LYRIVA_KEYSTORE_PASSWORD }}
+          LYRIVA_KEY_ALIAS: ${{ secrets.LYRIVA_KEY_ALIAS }}
+          LYRIVA_KEY_PASSWORD: ${{ secrets.LYRIVA_KEY_PASSWORD }}
+        run: >
+          gradle assembleDebug assembleRelease --console=plain
+          -PversionCode=${{ github.run_number }}
+          -PversionName=0.1.${{ github.run_number }}
+
+      - name: Đặt tên APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/LYRIVA-release-build${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/LYRIVA-debug-build${{ github.run_number }}.apk"
+          ls -la dist
+
+      - name: Tải APK lên Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LYRIVA-APK-build${{ github.run_number }}
+          path: dist/*.apk
+
+      - name: Báo cáo test (nếu có lỗi)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Mỗi lần đẩy code lên nhánh chính: tạo một GitHub Release kèm APK release
+      - name: Tạo GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: "Build #${{ github.run_number }}"
-          body: "Tự động build từ commit ${{ github.sha }}"
-          files: app/build/outputs/apk/release/*.apk
+          name: LYRIVA build ${{ github.run_number }}
+          body: |
+            APK release tự động từ commit ${{ github.sha }}.
+            Tải file `LYRIVA-release-build${{ github.run_number }}.apk` bên dưới rồi cài lên điện thoại.
+          files: dist/LYRIVA-release-build${{ github.run_number }}.apk

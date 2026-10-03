@@ -1,64 +1,35 @@
-# Multi Account WebView (1 APK duy nhất)
+# LYRIVA (Android)
 
-Ứng dụng WebView có **nhiều "tab lớn"**, mỗi tab lớn = **1 tài khoản Google riêng biệt, session/cookie
-tách biệt hoàn toàn** — dù chỉ nằm trong **1 APK**. Trong mỗi tab lớn có các **"tab nhỏ"** (mặc định:
-`Dashboard` trỏ tới `dashboard.render.com`, `Web` trỏ tới trang bạn muốn keep-alive), có thể tự
-thêm/xoá tab nhỏ ngay trong app.
+Ứng dụng tạo video lyrics TikTok từ nhạc + lời: tạo LRC bằng cách chạm theo nhịp, dựng video 9:16 xuất MP4.
+Kotlin + Jetpack Compose, minSdk 29, applicationId `com.lyriva.ninfinity`.
 
-## Vì sao tách được session trong cùng 1 APK?
+Tiến độ: **P0** (khung dự án, CI, giao diện cố định) và **P1** (lõi LRC: đọc/ghi LRC, LRC nâng cao, SRT, WAV, lưu dự án) đã xong.
+Tiếp theo: P2 (giải mã nhạc, sóng, đồng bộ), P3 (renderer + font), P4 (thumbnail), P5 (xuất MP4), P6 (video nền).
 
-Android cho phép 1 app chạy nhiều **tiến trình (process)** song song, mỗi tiến trình có vùng nhớ và
-(quan trọng nhất) **thư mục dữ liệu WebView riêng** nếu ta gọi `WebView.setDataDirectorySuffix()`.
-App này khai báo sẵn **6 "slot"** (`BrowserActivitySlot0`..`Slot5`), mỗi slot chạy ở 1 tiến trình
-riêng (`android:process=":slot0"`, `":slot1"`, ...). Khi bạn tạo 1 tài khoản mới, nó được gán vào
-1 slot còn trống — đăng nhập Google ở slot này không hề ảnh hưởng / không nhìn thấy được ở slot khác.
+## Đưa lên GitHub
 
-**Giới hạn:** tối đa **6 tài khoản cùng lúc** vì số slot được khai báo cứng trong code. Muốn tăng lên,
-xem mục "Tăng số lượng tài khoản tối đa" bên dưới.
+1. Tạo repo **private** mới trên GitHub, ví dụ `lyriva-android`.
+2. Giải nén file zip, đẩy toàn bộ nội dung (kể cả thư mục ẩn `.github`) lên nhánh `main`.
+3. Vào tab **Actions**, workflow **Build LYRIVA APK** sẽ tự chạy (khoảng 5–8 phút lần đầu).
 
-## Cách dùng trong app
+## Lấy APK
 
-1. Mở app → màn hình đầu tiên là **danh sách tài khoản** (trống lúc đầu)
-2. Bấm **"+ Thêm tài khoản"** → nhập tên (tuỳ ý) + link web cần keep-alive → bấm Thêm
-   → app tự mở tài khoản đó với 2 tab nhỏ mặc định: `Dashboard` (Render) và `Web` (link bạn nhập)
-3. Trong màn hình 1 tài khoản: bấm menu 3 gạch góc trên trái để xem/chuyển/thêm/xoá tab nhỏ
-4. Đăng nhập Google ngay trong tab Dashboard — lần sau mở lại tài khoản này sẽ **không cần đăng nhập
-   lại** (cookie được lưu riêng theo slot, tự ghi xuống đĩa sau mỗi lần tải trang)
-5. Muốn đăng xuất tài khoản đó (vd để tái sử dụng slot cho tài khoản Google khác): vào menu ⋮ trên
-   toolbar → **"Đăng xuất tài khoản này"**
-6. Nút ⋮ trên toolbar cũng có: Chế độ máy tính (đổi User-Agent + ép layout desktop), Tải lại trang,
-   Về trang chủ tab, Về danh sách tài khoản
+- **Releases** (cột phải trang repo): mỗi lần build xong có một bản `build-N` kèm `LYRIVA-release-buildN.apk`.
+- **Actions → lần chạy → Artifacts**: có cả bản debug và release.
+- Bản debug có đuôi `.debug` nên cài song song được với bản release.
 
-## Lưu ý quan trọng: Google có thể vẫn chặn đăng nhập trong WebView
+## Ký APK bằng khóa riêng (nên làm một lần)
 
-Google có chính sách chặn đăng nhập trong WebView tự chế (kể cả không lỗi kỹ thuật gì), hiện thông báo
-kiểu "This browser or app may not be secure". Đây là giới hạn từ phía Google, không phải lỗi app. Nếu
-gặp phải, báo lại để đổi hướng xử lý (thường cần Chrome Custom Tabs riêng cho bước đăng nhập).
+Không làm bước này thì APK release vẫn cài được nhưng ký bằng khóa debug dùng chung.
 
-## Thiết lập build (giống trước, không đổi)
+1. **Actions → Tạo khóa ký release → Run workflow** (repo phải để private).
+2. Mở lần chạy đó, tải artifact `LYRIVA-signing-secrets`, giải nén `secrets.txt`.
+3. **Settings → Secrets and variables → Actions → New repository secret**, tạo 4 secret đúng tên và giá trị trong `secrets.txt`:
+   `LYRIVA_KEYSTORE_BASE64`, `LYRIVA_KEYSTORE_PASSWORD`, `LYRIVA_KEY_ALIAS`, `LYRIVA_KEY_PASSWORD`.
+4. Xóa artifact `LYRIVA-signing-secrets` và cất `secrets.txt` ở nơi an toàn. **Mất khóa này thì không cập nhật đè được bản đã cài.**
 
-1. Chạy workflow **"0. Tạo keystore (chạy 1 lần)"** trong tab Actions để tạo keystore
-2. Thêm 4 secret: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
-3. Push code lên nhánh `main` → Actions tự build và tạo Release đính kèm file
-   `MultiAccountWebView.apk` — vào tab **Releases** để tải, không cần vào Actions
+Từ lần build sau, APK release tự được ký bằng khóa này.
 
-## Tăng số lượng tài khoản tối đa (hiện đang là 6)
+## Build trên máy (tùy chọn)
 
-1. Mở `app/src/main/java/com/example/webviewapp/BrowserSlots.kt`, thêm dòng:
-   ```kotlin
-   class BrowserActivitySlot6 : BrowserActivity()
-   ```
-2. Mở `app/src/main/AndroidManifest.xml`, thêm block:
-   ```xml
-   <activity android:name=".BrowserActivitySlot6" android:process=":slot6"
-       android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
-   ```
-3. Mở `app/src/main/java/com/example/webviewapp/AccountListActivity.kt`, thêm
-   `BrowserActivitySlot6::class.java` vào cuối danh sách `slotActivities`.
-4. Commit, push, build lại.
-
-## Cài đặt lên máy
-
-Chỉ có **1 file APK duy nhất** (`MultiAccountWebView.apk`) — cài 1 lần, dùng cho mọi tài khoản (khác
-hoàn toàn cách cũ là mỗi tài khoản 1 APK riêng). Cập nhật app sau này chỉ cần cài đè, dữ liệu/tài khoản
-đã lưu vẫn giữ nguyên.
+Mở thư mục bằng Android Studio (bản mới), nó tự tạo Gradle wrapper. CI không cần wrapper vì dùng `gradle/actions/setup-gradle`.

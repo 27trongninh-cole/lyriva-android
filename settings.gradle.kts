@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "WebViewApp"
-include ':app'
+rootProject.name = "lyriva-android"
+include(":app")
