@@ -243,6 +243,7 @@ private fun PageExport(vm: AppViewModel, goVideo: () -> Unit) {
     var xw by rememberSaveable { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var useEnh by rememberSaveable { mutableStateOf(true) }
     val ready = p.marks.isNotEmpty() && p.marks.size <= built.items.size
     val stem = TextUtils.fileStem(p.title.ifBlank { p.sourceName.substringBeforeLast('.') })
     val dur = maxOf(0.0, p.cutEnd - p.cutStart)
@@ -259,6 +260,25 @@ private fun PageExport(vm: AppViewModel, goVideo: () -> Unit) {
         SwitchLine("SRT", "Phụ đề (.srt)", xs, card = true) { xs = it }
         SwitchLine("Nhạc đã cắt", "File WAV đúng đoạn đã chọn", xw, card = true) { xw = it }
         Spacer(Modifier.weight(1f))
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Label("Dựng video bằng")
+            Seg(listOf("LRC nâng cao", "LRC thường"), if (useEnh) 0 else 1, { i -> useEnh = i == 0 })
+        }
+        Btn(
+            "Dựng video ngay", {
+                val lines = LrcWriter.lines(p.marks, built.items, dur)
+                vm.update {
+                    it.copy(
+                        lrcText = if (useEnh) LrcWriter.enhanced(lines, built.meta, it.title, it.artist)
+                        else LrcWriter.plain(lines, it.title, it.artist),
+                        bgUri = if (it.sourceIsVideo) it.audioUri else it.bgUri,
+                        bgOffset = if (it.sourceIsVideo) it.cutStart else it.bgOffset
+                    )
+                }
+                goVideo()
+            },
+            Modifier.fillMaxWidth(), primary = true, enabled = ready, icon = Ic.ARROW, iconRight = true
+        )
         Note(msg, 1, center = true)
         Btn(
             if (busy) "Đang lưu…" else "Tải xuống", {
@@ -309,20 +329,6 @@ private fun PageExport(vm: AppViewModel, goVideo: () -> Unit) {
                 }
             },
             Modifier.fillMaxWidth(), enabled = ready && !busy, icon = Ic.DL
-        )
-        Btn(
-            "Dựng video ngay", {
-                val lines = LrcWriter.lines(p.marks, built.items, dur)
-                vm.update {
-                    it.copy(
-                        lrcText = LrcWriter.plain(lines, it.title, it.artist),
-                        bgUri = if (it.sourceIsVideo) it.audioUri else it.bgUri,
-                        bgOffset = if (it.sourceIsVideo) it.cutStart else it.bgOffset
-                    )
-                }
-                goVideo()
-            },
-            Modifier.fillMaxWidth(), primary = true, enabled = ready, icon = Ic.ARROW, iconRight = true
         )
     }
 }

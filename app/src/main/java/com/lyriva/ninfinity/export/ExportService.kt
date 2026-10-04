@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.lyriva.ninfinity.MainActivity
 import com.lyriva.ninfinity.data.ProjectStore
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 /** Chạy việc xuất MP4 trong foreground service để tắt màn hình hoặc chuyển app vẫn xuất tiếp. */
 class ExportService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
         const val ACTION_CANCEL = "com.lyriva.ninfinity.CANCEL_EXPORT"
@@ -40,6 +42,10 @@ class ExportService : Service() {
         active = true
         ensureChannel()
         startForeground(NOTIF_ID, notif("Đang chuẩn bị…", 0), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        // giữ CPU hoạt động khi tắt màn hình (tối đa 3 giờ)
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lyriva:export")
+            .apply { acquire(3 * 60 * 60 * 1000L) }
         scope.launch { runExport() }
         return START_NOT_STICKY
     }
@@ -67,6 +73,8 @@ class ExportService : Service() {
         } finally {
             ExportState.running = false
             active = false
+            try { wakeLock?.release() } catch (_: Exception) {}
+            wakeLock = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }

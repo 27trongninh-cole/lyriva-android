@@ -21,7 +21,10 @@ object LrcParser {
     private val WS = Regex("\\s+")
     private val NEWLINE = Regex("\\r?\\n")
 
-    private class RawWord(var t: Double, val i: Int, val l: Int)
+    private class RawWord(var t: Double, val i: Int, val l: Int) {
+        /** Mốc kết thúc ghi ở cuối dòng (<mm:ss.xx> sau chữ cuối), nếu có. */
+        var endAbs: Double? = null
+    }
     private class RawLine(var t: Double, val s: String, val w: List<RawWord>?)
 
     fun parse(text: String): LrcResult {
@@ -82,14 +85,12 @@ object LrcParser {
                 }
             }
             val s = WS.replace(sb.toString(), " ").trim()
+            val trailing = cur // thẻ thời gian đứng sau chữ cuối = lúc chữ cuối kết thúc
             for (t in ts) {
-                out.add(
-                    RawLine(
-                        t, s,
-                        if (words.isEmpty()) null
-                        else words.map { RawWord(it.first + t - ts[0], it.second, it.third) }
-                    )
-                )
+                val ws = if (words.isEmpty()) null
+                else words.map { RawWord(it.first + t - ts[0], it.second, it.third) }
+                if (ws != null && trailing != null) ws.last().endAbs = trailing + t - ts[0]
+                out.add(RawLine(t, s, ws))
             }
         }
 
@@ -97,7 +98,10 @@ object LrcParser {
         if (off != 0.0) {
             for (x in out) {
                 x.t -= off
-                x.w?.forEach { it.t -= off }
+                x.w?.forEach {
+                    it.t -= off
+                    it.endAbs = it.endAbs?.minus(off)
+                }
             }
         }
         out.sortBy { it.t } // sắp xếp ổn định, giống Array.sort của JS
@@ -111,7 +115,11 @@ object LrcParser {
                 LrcLine(
                     x.t, x.s,
                     w.mapIndexed { q, rw ->
-                        LrcWord(rw.t, rw.i, rw.l, if (q + 1 < w.size) w[q + 1].t else minOf(end, rw.t + 1.5))
+                        LrcWord(
+                            rw.t, rw.i, rw.l,
+                            if (q + 1 < w.size) w[q + 1].t
+                            else rw.endAbs?.takeIf { it > rw.t } ?: minOf(end, rw.t + 1.5)
+                        )
                     }
                 )
             }

@@ -25,9 +25,18 @@ class LrcParserTest {
         assertNotNull(w)
         assertEquals(2, w!!.size)
         assertEquals(11.0, w[0].e, 1e-9)
-        assertEquals(12.5, w[1].e, 1e-9)
+        assertEquals(12.0, w[1].e, 1e-9)
         assertEquals(2.5, LrcParser.highlightChars(l, 10.5), 1e-9)
-        assertEquals(6 + 5 * (0.5 / 1.5), LrcParser.highlightChars(l, 11.5), 1e-9)
+        assertEquals(6 + 5 * (0.5 / 1.0), LrcParser.highlightChars(l, 11.5), 1e-9)
+    }
+
+    @Test fun trailingTagIsEndOfLastWord() {
+        val r = LrcParser.parse("[00:10.00]<00:10.00>Whole line here <00:14.00>")
+        val w = r.items[0].w!!
+        assertEquals(1, w.size)
+        assertEquals(14.0, w[0].e, 1e-9)
+        // giữa dòng thì tô khoảng nửa câu, không phải đã tô hết
+        assertEquals(true, LrcParser.highlightChars(r.items[0], 12.0) < r.items[0].s.length)
     }
 
     @Test fun offsetShiftsTimes() {
