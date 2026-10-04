@@ -2,7 +2,9 @@ package com.lyriva.ninfinity.ui
 
 import android.net.Uri
 import android.view.TextureView
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -16,7 +18,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import com.lyriva.ninfinity.audio.AudioDecoder
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 
 @Composable
 fun rememberPlayer(uri: String?): ExoPlayer? {
@@ -51,11 +56,19 @@ fun rememberPlayerPos(player: ExoPlayer?, onTick: (Double) -> Unit = {}): State<
     return pos
 }
 
+/** Hiện video đúng tỉ lệ gốc (9:16, 16:9…), vừa khít khung cố định, không bị kéo méo. */
 @Composable
-fun VideoSurface(player: ExoPlayer?, modifier: Modifier = Modifier) {
-    AndroidView(
-        factory = { c -> TextureView(c) },
-        modifier = modifier,
-        update = { tv -> player?.setVideoTextureView(tv) }
-    )
+fun VideoSurface(player: ExoPlayer?, uri: String?, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val ratio by produceState(9f / 16f, uri) {
+        val r = if (uri == null) null else withContext(Dispatchers.IO) { AudioDecoder.videoRatio(ctx, Uri.parse(uri)) }
+        if (r != null) value = r
+    }
+    FitBox(ratio, modifier) {
+        AndroidView(
+            factory = { c -> TextureView(c) },
+            modifier = Modifier.fillMaxSize(),
+            update = { tv -> player?.setVideoTextureView(tv) }
+        )
+    }
 }

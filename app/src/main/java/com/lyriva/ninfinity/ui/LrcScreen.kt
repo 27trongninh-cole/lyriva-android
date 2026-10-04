@@ -123,8 +123,8 @@ private fun PageSource(vm: AppViewModel, next: () -> Unit) {
                 true, "Đổi"
             ) { pick.launch(arrayOf("audio/*", "video/*")) }
             if (p.sourceIsVideo) {
-                Box(Modifier.fillMaxWidth().height(96.dp).clip(R12).background(Lc.Screen)) {
-                    VideoSurface(player, Modifier.fillMaxSize())
+                Box(Modifier.fillMaxWidth().height(168.dp).clip(R12).background(Lc.Screen)) {
+                    VideoSurface(player, p.audioUri, Modifier.fillMaxSize())
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {

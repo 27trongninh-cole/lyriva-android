@@ -217,8 +217,8 @@ fun SyncScreen(vm: AppViewModel, onClose: () -> Unit, onDone: () -> Unit) {
             Btn("Xong", { finish(marks.size >= n) }, Modifier.width(88.dp), primary = true, small = true)
         }
         if (p.sourceIsVideo) {
-            Box(Modifier.fillMaxWidth().height(96.dp).clip(R12).background(Lc.Screen)) {
-                VideoSurface(player, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxWidth().height(112.dp).clip(R12).background(Lc.Screen)) {
+                VideoSurface(player, p.audioUri, Modifier.fillMaxSize())
             }
         }
         Box(

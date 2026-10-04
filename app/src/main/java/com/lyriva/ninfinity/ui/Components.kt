@@ -70,12 +70,23 @@ fun Btn(
     icon: String? = null,
     iconRight: Boolean = false
 ) {
-    val fg = if (primary) Lc.OnAcc else Lc.Ink
+    // Màu theo từng trạng thái (không dùng độ trong suốt) để nút luôn rõ ràng trên nền tối.
+    val bg = when {
+        primary && enabled -> Lc.Acc
+        primary -> Lc.Hl
+        else -> Lc.Card2
+    }
+    val fg = when {
+        primary && enabled -> Lc.OnAcc
+        enabled -> Lc.Ink
+        else -> Lc.Mute
+    }
+    val border = if (primary && enabled) Lc.Acc else Lc.Line
     Box(
-        modifier.height(if (small) 40.dp else 48.dp).clip(R14)
-            .background(if (primary) Lc.Acc else Lc.Card2)
-            .border(1.dp, if (primary) Lc.Acc else Lc.Line, R14)
-            .alpha(if (enabled) 1f else 0.4f)
+        modifier.height(if (small) 40.dp else 48.dp)
+            .background(bg, R14)
+            .border(1.dp, border, R14)
+            .clip(R14)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

@@ -54,6 +54,8 @@ data class Project(
     val credit: String = "",
     // hiện lời sớm (ms)
     val leadMs: Int = 100,
+    // xuất nhanh: 24fps, video nền lấy khung thưa hơn
+    val fastExport: Boolean = false,
     // thumbnail đầu video
     val thumbEnabled: Boolean = true,
     val thumbDuration: Double = 0.02,
@@ -89,6 +91,7 @@ data class Project(
         put("bgDim", bgDim)
         put("credit", credit)
         put("leadMs", leadMs)
+        put("fastExport", fastExport)
         put("thumbEnabled", thumbEnabled)
         put("thumbDuration", thumbDuration)
         put("thumbGridPos", thumbGridPos)
@@ -135,6 +138,7 @@ data class Project(
                 bgDim = j.optInt("bgDim", d.bgDim),
                 credit = j.optString("credit", d.credit),
                 leadMs = j.optInt("leadMs", d.leadMs),
+                fastExport = j.optBoolean("fastExport", d.fastExport),
                 thumbEnabled = j.optBoolean("thumbEnabled", d.thumbEnabled),
                 thumbDuration = j.optDouble("thumbDuration", d.thumbDuration),
                 thumbGridPos = j.optInt("thumbGridPos", d.thumbGridPos)

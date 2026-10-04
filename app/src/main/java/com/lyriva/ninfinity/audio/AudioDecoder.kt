@@ -175,4 +175,25 @@ object AudioDecoder {
             try { r.release() } catch (_: Exception) {}
         }
     }
+
+    /** Tỉ lệ rộng/cao của video (đã tính xoay), hoặc null nếu không đọc được. */
+    fun videoRatio(ctx: Context, uri: Uri): Float? {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(ctx, uri)
+            var w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            var h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (rot == 90 || rot == 270) {
+                val t = w
+                w = h
+                h = t
+            }
+            if (w > 0 && h > 0) w.toFloat() / h else null
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { r.release() } catch (_: Exception) {}
+        }
+    }
 }

@@ -20,6 +20,10 @@ import com.lyriva.ninfinity.render.LyricsRenderer
 import com.lyriva.ninfinity.render.RenderData
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -30,9 +34,13 @@ import kotlin.math.min
  */
 object VideoExporter {
     private const val FPS = 30
+    private const val FPS_FAST = 24
 
     private class EncodedSample(val data: ByteArray, val pts: Long, val flags: Int)
     private class EncodedAudio(val format: MediaFormat, val samples: List<EncodedSample>)
+
+    private class Frame(val index: Int, val bmp: Bitmap)
+    private class BgSlot(val bmp: Bitmap?)
 
     fun export(
         ctx: Context,
@@ -48,11 +56,14 @@ object VideoExporter {
         val total = e - s
         if (total < 0.5) throw IllegalStateException("Đoạn nhạc quá ngắn")
 
+        val fps = if (p.fastExport) FPS_FAST else FPS
+        val bgStep = if (p.fastExport) 3 else 2       // cứ vài khung mới lấy một khung video nền
+        val bgSide = if (p.fastExport) 960 else 1280
         val data = RenderData.from(p)
         if (data.items.isEmpty()) throw IllegalStateException("Chưa có lời")
         val w = data.width
         val h = data.height
-        val frames = max(1, ceil(total * FPS).toInt())
+        val frames = max(1, ceil(total * fps).toInt())
 
         onProgress(0f, "Đang giải mã âm thanh…")
         val pcm = AudioDecoder.decodeRange(app, audioUri, s, e, cancelled)
@@ -64,11 +75,63 @@ object VideoExporter {
         val logo = BitmapFactory.decodeResource(app.resources, R.drawable.lyriva_logo, opts)
         val renderer = LyricsRenderer(Fonts(app), logo)
         renderer.data = data
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
 
-        val bgf: BgFrames? = if (data.bgOn) BgFrames(app).also { if (!it.open(p.bgUri)) { it.close() } } else null
-        var bgBmp: Bitmap? = null
+        val bgf: BgFrames? = if (data.bgOn) BgFrames(app) else null
+        val bgOk = bgf != null && bgf.open(p.bgUri)
+
+        // Ba công đoạn chạy song song nên tốc độ chỉ phụ thuộc công đoạn chậm nhất:
+        // (1) lấy khung video nền  (2) vẽ lời lên Bitmap  (3) nạp GPU + mã hóa H.264
+        val stop = AtomicBoolean(false)
+        val failure = AtomicReference<Throwable?>(null)
+        val free = ArrayBlockingQueue<Bitmap>(3)
+        repeat(3) { free.add(Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)) }
+        val ready = ArrayBlockingQueue<Frame>(3)
+        val bgQueue = ArrayBlockingQueue<BgSlot>(3)
+        val tick = TimeUnit.MILLISECONDS
+
+        val bgThread: Thread? = if (bgOk && bgf != null) Thread {
+            try {
+                var j = 0
+                while (!stop.get() && j * bgStep < frames) {
+                    val b = bgf.frameAt(p.bgOffset + j * bgStep / fps.toDouble(), bgSide)
+                    val slot = BgSlot(b)
+                    while (!stop.get() && !bgQueue.offer(slot, 100, tick)) { /* chờ chỗ trống */ }
+                    j++
+                }
+            } catch (t: Throwable) {
+                failure.compareAndSet(null, t)
+                stop.set(true)
+            }
+        }.also { it.start() } else null
+
+        val renderThread = Thread {
+            try {
+                var cur: Bitmap? = null
+                for (i in 0 until frames) {
+                    if (stop.get()) break
+                    var bmp: Bitmap? = null
+                    while (!stop.get() && bmp == null) bmp = free.poll(100, tick)
+                    if (bmp == null) break
+                    if (bgThread != null && i % bgStep == 0) {
+                        var slot: BgSlot? = null
+                        while (!stop.get() && slot == null) slot = bgQueue.poll(100, tick)
+                        if (slot == null) break
+                        val nb = slot.bmp
+                        if (nb != null) {
+                            val old = cur
+                            cur = nb
+                            old?.recycle()
+                        }
+                    }
+                    renderer.draw(Canvas(bmp), i / fps.toDouble(), cur)
+                    val f = Frame(i, bmp)
+                    while (!stop.get() && !ready.offer(f, 100, tick)) { /* chờ chỗ trống */ }
+                }
+            } catch (t: Throwable) {
+                failure.compareAndSet(null, t)
+                stop.set(true)
+            }
+        }.also { it.start() }
 
         val outName = TextUtils.fileStem(p.title) + "_LYRIVA.mp4"
         val pending = MediaSaver.createVideo(app, outName)
@@ -80,7 +143,7 @@ object VideoExporter {
             val vf = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, if (w > h) 6_000_000 else 8_000_000)
-                setInteger(MediaFormat.KEY_FRAME_RATE, FPS)
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             }
             val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
@@ -134,26 +197,31 @@ object VideoExporter {
                 }
             }
 
-            for (i in 0 until frames) {
+            var done = 0
+            val startMs = System.currentTimeMillis()
+            while (done < frames) {
                 if (cancelled()) throw ExportCancelled()
-                val t = i / FPS.toDouble()
-                if (bgf != null && (i % 2 == 0 || bgBmp == null)) {
-                    val nb = bgf.frameAt(p.bgOffset + t, 1280)
-                    if (nb != null) {
-                        bgBmp?.recycle()
-                        bgBmp = nb
-                    }
-                }
-                renderer.draw(canvas, t, bgBmp)
-                glv.draw(bmp, i * 1_000_000_000L / FPS)
+                failure.get()?.let { throw it }
+                val f = ready.poll(100, tick) ?: continue
+                glv.draw(f.bmp, f.index * 1_000_000_000L / fps)
+                free.offer(f.bmp)
                 drain(false)
-                if (i % 5 == 0) onProgress(0.10f + 0.88f * i / frames, "Đang dựng video ${i * 100 / frames}%")
+                done++
+                if (done % 5 == 0) {
+                    val el = (System.currentTimeMillis() - startMs) / 1000.0
+                    val left = if (done > 10) (el / done * (frames - done)).toInt() else -1
+                    val eta = if (left >= 0) " • còn khoảng ${left / 60}:${(left % 60).toString().padStart(2, '0')}" else ""
+                    onProgress(0.10f + 0.88f * done / frames, "Đang dựng video ${done * 100 / frames}%$eta")
+                }
             }
             drain(true)
             if (!started) throw IllegalStateException("Không tạo được video")
             mux.stop()
             ok = true
         } finally {
+            stop.set(true)
+            try { renderThread.join(3000) } catch (_: Exception) {}
+            try { bgThread?.join(3000) } catch (_: Exception) {}
             try { enc?.stop() } catch (_: Exception) {}
             try { enc?.release() } catch (_: Exception) {}
             try { gl?.release() } catch (_: Exception) {}

@@ -335,7 +335,18 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                             if (p.audioUri == null) "Chưa chọn" else p.sourceName + " • " + TimeUtils.fmtShort(max(0.0, e - s)),
                             p.audioUri != null, if (p.audioUri == null) "Chọn" else "Đổi"
                         ) { pickAudio.launch(arrayOf("audio/*", "video/*")) }
-                        Note("Làm xong ở tab Tạo LRC rồi bấm Dựng video ngay sẽ tự điền cả hai.", 2)
+                        val fp = vm.fontProgress
+                        val fontReady = vm.fonts.readyFor(p.language)
+                        FileCard(
+                            Ic.AA, "Font chữ",
+                            when {
+                                fp != null -> "Đang tải… ${(fp * 100).roundToInt()}%"
+                                vm.fontError != null -> "Tải lỗi, chạm để thử lại"
+                                fontReady -> "Be Vietnam Pro" + (p.language.fontName?.let { " + $it" } ?: "") + " • đã tải"
+                                else -> "Chưa tải, đang dùng font hệ thống"
+                            },
+                            fontReady, if (fontReady) "Đã tải" else if (fp != null) "…" else "Tải"
+                        ) { if (fp == null && !fontReady) vm.downloadFonts() }
                     }
                     1 -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -429,16 +440,12 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                         SliderRow("Hiện lời sớm", p.leadMs.toFloat(), 0f..600f, "${p.leadMs}ms") { v ->
                             vm.update { it.copy(leadMs = (v / 10f).roundToInt() * 10) }
                         }
-                        Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            val fp = vm.fontProgress
-                            val st = when {
-                                fp != null -> "Đang tải font… ${(fp * 100).roundToInt()}%"
-                                vm.fontError != null -> vm.fontError ?: ""
-                                vm.fonts.readyFor(p.language) -> "Font đã sẵn sàng"
-                                else -> "Chưa tải font (dùng font hệ thống)"
-                            }
-                            Text(st, color = Lc.Mute, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Btn("Tải font", { vm.downloadFonts() }, Modifier.width(112.dp), small = true, enabled = fp == null)
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Label("Tốc độ xuất")
+                            Seg(
+                                listOf("Chuẩn 30fps", "Nhanh 24fps"), if (p.fastExport) 1 else 0,
+                                { i -> vm.update { it.copy(fastExport = i == 1) } }
+                            )
                         }
                         Btn(
                             "Xuất video MP4", { requestExport() }, Modifier.fillMaxWidth(), primary = true,
