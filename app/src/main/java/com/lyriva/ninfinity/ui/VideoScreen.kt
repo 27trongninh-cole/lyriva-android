@@ -57,7 +57,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.lyriva.ninfinity.AppViewModel
 import com.lyriva.ninfinity.audio.AudioDecoder
+import com.lyriva.ninfinity.core.Fade
 import com.lyriva.ninfinity.core.LrcParser
+import com.lyriva.ninfinity.core.SingerPalette
 import com.lyriva.ninfinity.core.TextUtils
 import com.lyriva.ninfinity.core.TimeUtils
 import com.lyriva.ninfinity.data.Aspect
@@ -69,6 +71,7 @@ import com.lyriva.ninfinity.export.MediaSaver
 import com.lyriva.ninfinity.render.BgFrames
 import com.lyriva.ninfinity.render.LyricsRenderer
 import com.lyriva.ninfinity.render.RenderData
+import com.lyriva.ninfinity.render.ThumbBg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -86,12 +89,14 @@ fun LyricCanvas(
     t: () -> Double,
     bg: () -> Bitmap?,
     paused: () -> Boolean,
+    thumbBg: () -> Bitmap?,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier) {
         val tt = t()
         val b = bg()
         renderer.paused = paused()
+        renderer.thumbBg = thumbBg()
         val sc = size.width / renderer.data.width
         drawIntoCanvas { c ->
             val nc = c.nativeCanvas
@@ -126,8 +131,8 @@ private fun PlayerBar(
 }
 
 private val TOOLS = listOf(
-    "Nguồn" to Ic.WAVE, "Bài hát" to Ic.MUSIC, "Vietsub" to Ic.SUB, "Nền" to Ic.FILM,
-    "Khung" to Ic.CROP, "Bìa" to Ic.IMG, "Xuất" to Ic.UP
+    "Nguồn" to Ic.WAVE, "Bài hát" to Ic.MUSIC, "Lời phụ" to Ic.SUB, "Nền" to Ic.FILM,
+    "Khung" to Ic.CROP, "Bìa" to Ic.IMG, "Hiệu ứng" to Ic.SPARK, "Xuất" to Ic.UP
 )
 
 @Composable
@@ -139,6 +144,17 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
     var big by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf<List<String>?>(null) }
+    var phuTab by rememberSaveable { mutableStateOf(0) }
+    var biaTab by rememberSaveable { mutableStateOf(0) }
+    var showPalette by remember { mutableStateOf(false) }
+    val groups = remember(p.palettesText) { SingerPalette.parse(p.palettesText) }
+    val groupNames = listOf("Tự động") + groups.map { it.name.ifEmpty { "(không tên)" } }
+    val gi = if (p.activeGroup.isEmpty()) 0 else groups.indexOfFirst { it.name == p.activeGroup }.let { if (it < 0) 0 else it + 1 }
+    fun stepGroup(d: Int) {
+        val n = groupNames.size
+        val ni = ((gi + d) % n + n) % n
+        vm.update { it.copy(activeGroup = if (ni == 0) "" else groups[ni - 1].name) }
+    }
 
     // ---- renderer dùng chung cho xem thử ----
     val renderer = remember { LyricsRenderer(vm.fonts, vm.logo) }
@@ -156,7 +172,10 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
     val e = if (p.cutEnd > p.cutStart) p.cutEnd else max(s + 1.0, durGuess)
     val eNow by rememberUpdatedState(e)
     var playing by remember { mutableStateOf(false) }
+    val fadeInNow by rememberUpdatedState(p.fadeIn)
+    val fadeOutNow by rememberUpdatedState(p.fadeOut)
     val pos = rememberPlayerPos(player) { t ->
+        player?.volume = Fade.gain(t - s, eNow - s, fadeInNow, fadeOutNow)
         if (durGuess == 0.0) {
             val d = player?.duration ?: 0L
             if (d > 0) durGuess = d / 1000.0
@@ -215,6 +234,12 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
         } finally {
             bf.close()
         }
+    }
+
+    // ---- khung video nền lồng vào thumbnail ----
+    var thumbBgBmp by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(p.bgUri, p.thumbBgOn, p.thumbBgTime) {
+        thumbBgBmp = withContext(Dispatchers.IO) { ThumbBg.load(ctx, p) }
     }
 
     // ---- chọn file ----
@@ -298,12 +323,12 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
     val label = TimeUtils.fmtShort(max(0.0, pos.value - s)) + " / " + TimeUtils.fmtShort(max(0.0, e - s))
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val sheetH = (maxHeight * 0.42f).coerceIn(250.dp, 330.dp)
+        val sheetH = (maxHeight * 0.45f).coerceIn(250.dp, 340.dp)
         Column(Modifier.fillMaxSize()) {
             // ---------- sân khấu xem thử (luôn cùng kích thước) ----------
             Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
                 FitBox(ratio, Modifier.weight(1f).fillMaxWidth()) {
-                    LyricCanvas(renderer, { max(0.0, pos.value - s) }, { bgBmp }, { !playing }, Modifier.fillMaxSize().clip(R10))
+                    LyricCanvas(renderer, { max(0.0, pos.value - s) }, { bgBmp }, { !playing }, { thumbBgBmp }, Modifier.fillMaxSize().clip(R10))
                     if (empty) {
                         Box(Modifier.fillMaxSize().background(Color(0xCC111111)), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
@@ -372,14 +397,33 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                         }
                     }
                     2 -> {
-                        SwitchLine("Hiện Vietsub", "Dòng phụ dưới câu đang hát", p.vietsubOn) { v -> vm.update { it.copy(vietsubOn = v) } }
-                        TextArea(
-                            p.vietsubText, { v -> vm.update { it.copy(vietsubText = v) } },
-                            Modifier.height(96.dp), "Dán bản dịch, mỗi dòng một câu…", size = 14
-                        )
-                        Note("Dòng thứ n ứng với câu thứ n. Dùng //…// để ẩn phần không muốn hiện.", 2)
-                        if (p.language.fontName != null) {
-                            SwitchLine("Hiện romanized", "Phiên âm dưới lời gốc", p.romanOn) { v -> vm.update { it.copy(romanOn = v) } }
+                        Seg(listOf("Vietsub", "Người hát"), phuTab, { phuTab = it })
+                        if (phuTab == 0) {
+                            SwitchLine("Hiện Vietsub", null, p.vietsubOn) { v -> vm.update { it.copy(vietsubOn = v) } }
+                            TextArea(
+                                p.vietsubText, { v -> vm.update { it.copy(vietsubText = v) } },
+                                Modifier.height(88.dp), "Dán bản dịch, mỗi dòng một câu…", size = 14
+                            )
+                            Note("Dòng n ứng với câu n. Dùng //…// để ẩn phần không muốn hiện.", 1)
+                            if (p.language.fontName != null) {
+                                SwitchLine("Hiện romanized", null, p.romanOn) { v -> vm.update { it.copy(romanOn = v) } }
+                            }
+                        } else {
+                            SwitchLine("Hiện tên người hát", null, p.singerOn) { v -> vm.update { it.copy(singerOn = v) } }
+                            TextArea(
+                                p.singersText, { v -> vm.update { it.copy(singersText = v) } },
+                                Modifier.height(72.dp), "Dòng n = người hát câu n. Để trống = như câu trước, “-” = không hiện.", size = 14
+                            )
+                            Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Bảng màu", color = Lc.Mute, fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(72.dp))
+                                TextBtn("‹") { stepGroup(-1) }
+                                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                    Text(groupNames[gi], color = Lc.Ink, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                TextBtn("›") { stepGroup(1) }
+                                Btn("Sửa", { showPalette = true }, Modifier.width(72.dp), small = true)
+                            }
+                            Note("Nhiều người cùng hát: ngăn cách bằng dấu phẩy hoặc &.", 1)
                         }
                     }
                     3 -> {
@@ -402,32 +446,62 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                         SliderRow("Độ tối", p.bgDim.toFloat(), 0f..85f, "${p.bgDim}%") { v -> vm.update { it.copy(bgDim = v.roundToInt()) } }
                     }
                     5 -> {
-                        SwitchLine("Thumbnail đầu video", "Hiện bìa ở khung hình đầu tiên", p.thumbEnabled) { v -> vm.update { it.copy(thumbEnabled = v) } }
-                        Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Thời lượng (giây)", color = Lc.Mute, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                            CommitBox(
-                                String.format(Locale.US, "%.2f", p.thumbDuration),
-                                { x -> x.replace(',', '.').toDoubleOrNull()?.let { d -> vm.update { it.copy(thumbDuration = d.coerceIn(0.02, 0.5)) } } },
-                                Modifier.width(100.dp), decimal = true
+                        Seg(listOf("Chung", "Nền bìa"), biaTab, { biaTab = it })
+                        if (biaTab == 0) {
+                            SwitchLine("Thumbnail đầu video", null, p.thumbEnabled) { v -> vm.update { it.copy(thumbEnabled = v) } }
+                            Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Thời lượng (giây)", color = Lc.Mute, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                                CommitBox(
+                                    String.format(Locale.US, "%.2f", p.thumbDuration),
+                                    { x -> x.replace(',', '.').toDoubleOrNull()?.let { d -> vm.update { it.copy(thumbDuration = d.coerceIn(0.02, 0.5)) } } },
+                                    Modifier.width(100.dp), decimal = true
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Btn("Lưới 3 cột", { openGrid() }, Modifier.weight(1f), icon = Ic.GRID)
+                                Btn("Tải ảnh bìa", {
+                                    scope.launch {
+                                        val r = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                val rr = LyricsRenderer(vm.fonts, vm.logo)
+                                                rr.data = RenderData.from(vm.project)
+                                                rr.thumbBg = ThumbBg.load(ctx, vm.project)
+                                                val uri = MediaSaver.savePng(ctx, stem + "_cover.png", rr.thumb.renderCover())
+                                                if (uri == null) error("Không lưu được ảnh")
+                                            }
+                                        }
+                                        msg = if (r.isSuccess) "Đã lưu ảnh bìa vào Pictures/LYRIVA" else "Lỗi: " + (r.exceptionOrNull()?.message ?: "")
+                                    }
+                                }, Modifier.weight(1f), icon = Ic.DL)
+                            }
+                            Note(if (msg.isNotEmpty()) msg else "Ô thứ ${p.thumbGridPos + 1} trong lưới hồ sơ.", 1)
+                        } else {
+                            SwitchLine("Lồng khung video vào nền bìa", null, p.thumbBgOn) { v -> vm.update { it.copy(thumbBgOn = v) } }
+                            Row(Modifier.fillMaxWidth().height(65.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
+                                TimeField("Thời điểm trong video nền", p.thumbBgTime, { x -> vm.update { it.copy(thumbBgTime = max(0.0, x)) } }, Modifier.weight(1f))
+                                Btn("Lấy khung hiện tại", {
+                                    val t = p.bgOffset + max(0.0, pos.value - s)
+                                    vm.update { it.copy(thumbBgTime = t, thumbBgOn = true) }
+                                }, Modifier.weight(1f), small = true, enabled = p.bgUri != null)
+                            }
+                            SliderRow("Độ tối", p.thumbBgDim.toFloat(), 20f..90f, "${p.thumbBgDim}%") { v -> vm.update { it.copy(thumbBgDim = v.roundToInt()) } }
+                            Note(
+                                if (p.bgUri == null) "Cần chọn video nền ở bảng Nền trước."
+                                else "Tua bản xem thử tới khung đẹp rồi bấm Lấy khung hiện tại.", 2
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Btn("Lưới 3 cột", { openGrid() }, Modifier.weight(1f), icon = Ic.GRID)
-                            Btn("Tải ảnh bìa", {
-                                scope.launch {
-                                    val r = withContext(Dispatchers.IO) {
-                                        runCatching {
-                                            val rr = LyricsRenderer(vm.fonts, vm.logo)
-                                            rr.data = RenderData.from(vm.project)
-                                            val uri = MediaSaver.savePng(ctx, stem + "_cover.png", rr.thumb.renderCover())
-                                            if (uri == null) error("Không lưu được ảnh")
-                                        }
-                                    }
-                                    msg = if (r.isSuccess) "Đã lưu ảnh bìa vào Pictures/LYRIVA" else "Lỗi: " + (r.exceptionOrNull()?.message ?: "")
-                                }
-                            }, Modifier.weight(1f), icon = Ic.DL)
+                    }
+                    6 -> {
+                        SliderRow("Hiện lời sớm", p.leadMs.toFloat(), 0f..600f, "${p.leadMs}ms") { v ->
+                            vm.update { it.copy(leadMs = (v / 10f).roundToInt() * 10) }
                         }
-                        Note("Ô thứ ${p.thumbGridPos + 1} trong lưới hồ sơ. Chọn ô ở màn hình lưới.", 1)
+                        SliderRow("Nhạc vào dần", p.fadeIn.toFloat(), 0f..8f, String.format(Locale.US, "%.1fs", p.fadeIn)) { v ->
+                            vm.update { it.copy(fadeIn = (v * 2).roundToInt() / 2.0) }
+                        }
+                        SliderRow("Nhạc ra dần", p.fadeOut.toFloat(), 0f..8f, String.format(Locale.US, "%.1fs", p.fadeOut)) { v ->
+                            vm.update { it.copy(fadeOut = (v * 2).roundToInt() / 2.0) }
+                        }
+                        Note("Nhạc vào/ra dần áp dụng cho tiếng của video xuất và nghe được ngay ở bản xem thử.", 2)
                     }
                     else -> {
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -436,9 +510,6 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                                 listOf("Dọc 9:16 · 1080×1920", "Ngang 16:9 · 1280×720"), p.aspect.ordinal,
                                 { i -> vm.update { it.copy(aspect = Aspect.values()[i]) } }
                             )
-                        }
-                        SliderRow("Hiện lời sớm", p.leadMs.toFloat(), 0f..600f, "${p.leadMs}ms") { v ->
-                            vm.update { it.copy(leadMs = (v / 10f).roundToInt() * 10) }
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Label("Tốc độ xuất")
@@ -483,9 +554,34 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                     IconBtn(Ic.X, { big = false })
                 }
                 FitBox(ratio, Modifier.weight(1f).fillMaxWidth()) {
-                    LyricCanvas(renderer, { max(0.0, pos.value - s) }, { bgBmp }, { !playing }, Modifier.fillMaxSize().clip(R10))
+                    LyricCanvas(renderer, { max(0.0, pos.value - s) }, { bgBmp }, { !playing }, { thumbBgBmp }, Modifier.fillMaxSize().clip(R10))
                 }
                 PlayerBar(playing, { toggle() }, frac, { f -> seekFrac(f) }, label, null)
+            }
+        }
+    }
+
+    // ---------- bảng màu ca sĩ ----------
+    if (showPalette) {
+        Dialog(
+            onDismissRequest = { showPalette = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Column(
+                Modifier.fillMaxSize().background(Lc.Bg).statusBarsPadding().navigationBarsPadding().imePadding().padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBtn(Ic.X, { showPalette = false })
+                    Text("Bảng màu ca sĩ", color = Lc.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Note("Mỗi nhóm bắt đầu bằng dòng “Tên nhóm: …”, sau đó mỗi dòng “Tên: #RRGGBB”. Màu chỉ áp dụng cho tên người hát.", 3)
+                TextArea(
+                    p.palettesText, { v -> vm.update { it.copy(palettesText = v) } }, Modifier.weight(1f),
+                    "Tên nhóm: CORTIS\nJames: #123456\nMartin: #234567", size = 14
+                )
+                Note("Đọc được ${groups.size} nhóm, ${groups.sumOf { it.members.size }} màu.", 1)
+                Btn("Xong", { showPalette = false }, Modifier.fillMaxWidth(), primary = true)
             }
         }
     }

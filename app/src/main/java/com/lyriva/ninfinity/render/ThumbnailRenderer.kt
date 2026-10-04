@@ -45,6 +45,7 @@ class ThumbnailRenderer(private val r: LyricsRenderer) {
     }
 
     private val q = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val bgPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val path = Path()
     private var thC: ThLay? = null
     private val d get() = r.data
@@ -302,6 +303,17 @@ class ThumbnailRenderer(private val r: LyricsRenderer) {
         q.clearShadowLayer()
         fill(LyricsRenderer.BG)
         cv.drawRect(0f, 0f, wF, hF, q)
+
+        // khung hình của video nền lồng làm nền bìa (ô hàng xóm giả thì để trơn)
+        val tb = r.thumbBg
+        if (!ghost && d.thumbBgOn && tb != null && tb.width > 0 && tb.height > 0) {
+            val sc = max(wF / tb.width, hF / tb.height)
+            val dw = tb.width * sc
+            val dh = tb.height * sc
+            cv.drawBitmap(tb, null, RectF((wF - dw) / 2f, (hF - dh) / 2f, (wF + dw) / 2f, (hF + dh) / 2f), bgPaint)
+            fill(Color.BLACK, d.thumbBgDim / 100f)
+            cv.drawRect(0f, 0f, wF, hF, q)
+        }
 
         // dải sáng chạy ngang quanh sợi nối
         val y0 = yc - vh * 0.22f

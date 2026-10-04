@@ -12,12 +12,14 @@ import android.net.Uri
 import com.lyriva.ninfinity.R
 import com.lyriva.ninfinity.audio.AudioDecoder
 import com.lyriva.ninfinity.audio.Pcm
+import com.lyriva.ninfinity.core.Fade
 import com.lyriva.ninfinity.core.TextUtils
 import com.lyriva.ninfinity.data.Project
 import com.lyriva.ninfinity.render.BgFrames
 import com.lyriva.ninfinity.render.Fonts
 import com.lyriva.ninfinity.render.LyricsRenderer
 import com.lyriva.ninfinity.render.RenderData
+import com.lyriva.ninfinity.render.ThumbBg
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
@@ -67,6 +69,7 @@ object VideoExporter {
 
         onProgress(0f, "Đang giải mã âm thanh…")
         val pcm = AudioDecoder.decodeRange(app, audioUri, s, e, cancelled)
+        Fade.apply(pcm.samples, pcm.channels, pcm.sampleRate, p.fadeIn, p.fadeOut)
         onProgress(0.04f, "Đang mã hóa âm thanh…")
         val audio = encodeAudio(pcm, cancelled)
         onProgress(0.08f, "Đang chuẩn bị video…")
@@ -75,6 +78,7 @@ object VideoExporter {
         val logo = BitmapFactory.decodeResource(app.resources, R.drawable.lyriva_logo, opts)
         val renderer = LyricsRenderer(Fonts(app), logo)
         renderer.data = data
+        renderer.thumbBg = ThumbBg.load(app, p)
 
         val bgf: BgFrames? = if (data.bgOn) BgFrames(app) else null
         val bgOk = bgf != null && bgf.open(p.bgUri)

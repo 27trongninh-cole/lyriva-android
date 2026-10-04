@@ -34,6 +34,9 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
             cache.clear()
         }
 
+    /** Khung hình lấy từ video nền để lồng vào thumbnail (do nơi dùng nạp). */
+    var thumbBg: Bitmap? = null
+
     /** Video đang dừng ở đầu: hiện lời đủ sáng thay vì fade-in. */
     var paused: Boolean = false
 
@@ -174,7 +177,10 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
 
     private fun rz(L: Lay) = L.z * 0.46f
     private fun bm(x: LyricItem, L: Lay) = L.ls.size * L.z * LH + (if (rom(x).isNotEmpty()) rz(L) * 1.9f else 0f)
-    private fun bh(x: LyricItem, L: Lay) = bm(x, L) + vh(x, L)
+    /** Nhãn tên người hát nằm phía trên câu: cỡ chữ và chiều cao khối nhãn. */
+    private fun lblZ(L: Lay) = L.z * 0.36f
+    private fun sh(x: LyricItem, L: Lay) = if (x.singers.isNotEmpty()) lblZ(L) * 1.9f else 0f
+    private fun bh(x: LyricItem, L: Lay) = sh(x, L) + bm(x, L) + vh(x, L)
 
     private fun wd(x: LyricItem, t: Double): Double {
         var d = 0.0
@@ -191,9 +197,30 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
         val r = rom(x)
         val main = mainOf(x)
         rect(mx, by, mx + u * 0.006f, by + bh(x, L) + L.z * 0.1f, acc, al)
+        val b0 = by + sh(x, L)
+        val sg = x.singers
+        if (sg.isNotEmpty()) {
+            var lz = lblZ(L)
+            val names = sg.map { it.name.uppercase() }
+            val sep = "  •  "
+            setFont(lz, 600, false, lz * 0.14f)
+            val total = names.sumOf { p.measureText(it).toDouble() }.toFloat() + p.measureText(sep) * (names.size - 1)
+            if (total > mw && total > 0f) lz *= mw / total
+            var cx = tx
+            names.forEachIndexed { i, nm ->
+                if (i > 0) {
+                    setFont(lz, 600, false, lz * 0.14f)
+                    txt(sep, cx, by + lz, MUTE, al)
+                    cx += p.measureText(sep)
+                }
+                setFont(lz, 600, hf(nm), lz * 0.14f)
+                txt(nm, cx, by + lz, sg[i].color, al)
+                cx += p.measureText(nm)
+            }
+        }
         var rem = cl(fr) * L.ls.sumOf { it.length }.toFloat()
         L.ls.forEachIndexed { q, ln ->
-            val y = by + L.z + q * lh
+            val y = b0 + L.z + q * lh
             setFont(L.z, MW, main, 0f)
             val w = p.measureText(ln)
             val f = cl(rem / max(1, ln.length))
@@ -208,12 +235,12 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
         }
         if (r.isNotEmpty()) {
             val z = fit(r, rz(L), mw, 400, 0f, false)
-            txt(r, tx, by + L.ls.size * lh + z * 0.9f, MUTE, al)
+            txt(r, tx, b0 + L.ls.size * lh + z * 0.9f, MUTE, al)
         }
         val vv = vl(x, L)
         if (vv != null) {
             setFont(vv.z, 500, false, 0f)
-            val y0 = by + bm(x, L) + vv.z * 0.55f + vv.z * 0.9f
+            val y0 = b0 + bm(x, L) + vv.z * 0.55f + vv.z * 0.9f
             vv.ls.forEachIndexed { q, ln -> txt(ln, tx, y0 + q * vv.z * 1.25f, VSUB, al) }
         }
     }

@@ -16,7 +16,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import android.graphics.Bitmap
+import com.lyriva.ninfinity.render.ThumbBg
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,7 +50,13 @@ fun GridScreen(vm: AppViewModel, onClose: () -> Unit) {
         renderer.data = data
         0
     }
-    val bmp = remember(data, p.thumbGridPos) { renderer.thumb.renderGrid(p.thumbGridPos).asImageBitmap() }
+    val ctx = LocalContext.current
+    var tbg by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(p.bgUri, p.thumbBgOn, p.thumbBgTime) { tbg = withContext(Dispatchers.IO) { ThumbBg.load(ctx, p) } }
+    val bmp = remember(data, p.thumbGridPos, tbg) {
+        renderer.thumbBg = tbg
+        renderer.thumb.renderGrid(p.thumbGridPos).asImageBitmap()
+    }
     Column(
         Modifier.fillMaxSize().background(Lc.Bg).statusBarsPadding().navigationBarsPadding().padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)

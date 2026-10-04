@@ -56,6 +56,18 @@ data class Project(
     val leadMs: Int = 100,
     // xuất nhanh: 24fps, video nền lấy khung thưa hơn
     val fastExport: Boolean = false,
+    // người hát (mỗi người một màu) và bảng màu cố định theo nhóm
+    val singerOn: Boolean = true,
+    val singersText: String = "",
+    val palettesText: String = "",
+    val activeGroup: String = "",
+    // nền thumbnail lấy từ một khung của video nền
+    val thumbBgOn: Boolean = false,
+    val thumbBgTime: Double = 0.0,
+    val thumbBgDim: Int = 60,
+    // nhạc vào dần / ra dần (giây)
+    val fadeIn: Double = 0.0,
+    val fadeOut: Double = 0.0,
     // thumbnail đầu video
     val thumbEnabled: Boolean = true,
     val thumbDuration: Double = 0.02,
@@ -92,6 +104,15 @@ data class Project(
         put("credit", credit)
         put("leadMs", leadMs)
         put("fastExport", fastExport)
+        put("singerOn", singerOn)
+        put("singersText", singersText)
+        put("palettesText", palettesText)
+        put("activeGroup", activeGroup)
+        put("thumbBgOn", thumbBgOn)
+        put("thumbBgTime", thumbBgTime)
+        put("thumbBgDim", thumbBgDim)
+        put("fadeIn", fadeIn)
+        put("fadeOut", fadeOut)
         put("thumbEnabled", thumbEnabled)
         put("thumbDuration", thumbDuration)
         put("thumbGridPos", thumbGridPos)
@@ -139,6 +160,15 @@ data class Project(
                 credit = j.optString("credit", d.credit),
                 leadMs = j.optInt("leadMs", d.leadMs),
                 fastExport = j.optBoolean("fastExport", d.fastExport),
+                singerOn = j.optBoolean("singerOn", d.singerOn),
+                singersText = j.optString("singersText", d.singersText),
+                palettesText = j.optString("palettesText", d.palettesText),
+                activeGroup = j.optString("activeGroup", d.activeGroup),
+                thumbBgOn = j.optBoolean("thumbBgOn", d.thumbBgOn),
+                thumbBgTime = j.optDouble("thumbBgTime", d.thumbBgTime),
+                thumbBgDim = j.optInt("thumbBgDim", d.thumbBgDim),
+                fadeIn = j.optDouble("fadeIn", d.fadeIn),
+                fadeOut = j.optDouble("fadeOut", d.fadeOut),
                 thumbEnabled = j.optBoolean("thumbEnabled", d.thumbEnabled),
                 thumbDuration = j.optDouble("thumbDuration", d.thumbDuration),
                 thumbGridPos = j.optInt("thumbGridPos", d.thumbGridPos)

@@ -39,6 +39,7 @@ object Ic {
     const val DL = "M12 4v12M7 11l5 5 5-5M4 20h16"
     const val SUB = "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3zM7 12h5M14 12h3M7 15.5h2.5M12 15.5h5"
     const val ARROW = "M5 12h14M13 6l6 6-6 6"
+    const val SPARK = "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z"
     const val EXPAND = "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"
 }
 
