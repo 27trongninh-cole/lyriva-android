@@ -53,7 +53,7 @@ class ExportService : Service() {
     private fun runExport() {
         try {
             val p = ProjectStore(applicationContext).load()
-            val uri = VideoExporter.export(
+            val res = VideoExporter.export(
                 applicationContext, p,
                 { prog, msg ->
                     ExportState.progress = prog
@@ -62,9 +62,13 @@ class ExportService : Service() {
                 },
                 { ExportState.cancelRequested }
             )
-            ExportState.resultUri = uri.toString()
+            ExportState.resultUri = res.video.toString()
             ExportState.progress = 1f
-            ExportState.message = "Đã lưu vào Movies/LYRIVA"
+            ExportState.message = when {
+                res.cover != null -> "Đã lưu video vào Movies/LYRIVA và ảnh bìa vào Pictures/LYRIVA"
+                p.thumbExport -> "Đã lưu video vào Movies/LYRIVA (ảnh bìa không lưu được)"
+                else -> "Đã lưu video vào Movies/LYRIVA"
+            }
             ExportState.done = true
         } catch (e: ExportCancelled) {
             ExportState.message = "Đã hủy xuất video"

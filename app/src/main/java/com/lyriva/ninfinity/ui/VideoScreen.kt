@@ -449,15 +449,7 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                     5 -> {
                         Seg(listOf("Chung", "Nền bìa"), biaTab, { biaTab = it })
                         if (biaTab == 0) {
-                            SwitchLine("Thumbnail đầu video", null, p.thumbEnabled) { v -> vm.update { it.copy(thumbEnabled = v) } }
-                            Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Thời lượng (giây)", color = Lc.Mute, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                                CommitBox(
-                                    String.format(Locale.US, "%.2f", p.thumbDuration),
-                                    { x -> x.replace(',', '.').toDoubleOrNull()?.let { d -> vm.update { it.copy(thumbDuration = d.coerceIn(0.02, 0.5)) } } },
-                                    Modifier.width(100.dp), decimal = true
-                                )
-                            }
+                            SwitchLine("Xuất kèm ảnh bìa với video", null, p.thumbExport) { v -> vm.update { it.copy(thumbExport = v) } }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Btn("Lưới 3 cột", { openGrid() }, Modifier.weight(1f), icon = Ic.GRID)
                                 Btn("Tải ảnh bìa", {
@@ -475,7 +467,7 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                                     }
                                 }, Modifier.weight(1f), icon = Ic.DL)
                             }
-                            Note(if (msg.isNotEmpty()) msg else "Ô thứ ${p.thumbGridPos + 1} trong lưới hồ sơ.", 1)
+                            Note(if (msg.isNotEmpty()) msg else "Ảnh PNG lưu ở Pictures/LYRIVA. Ô thứ ${p.thumbGridPos + 1} trong lưới.", 1)
                         } else {
                             SwitchLine("Lồng khung video vào nền bìa", null, p.thumbBgOn) { v -> vm.update { it.copy(thumbBgOn = v) } }
                             Row(Modifier.fillMaxWidth().height(65.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {

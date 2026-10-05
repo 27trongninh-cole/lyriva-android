@@ -61,6 +61,8 @@ data class Project(
     val singersText: String = "",
     val palettesText: String = "",
     val activeGroup: String = "",
+    // xuất kèm ảnh bìa (PNG) mỗi lần xuất video
+    val thumbExport: Boolean = true,
     // nền thumbnail lấy từ một khung của video nền
     val thumbBgOn: Boolean = false,
     val thumbBgTime: Double = 0.0,
@@ -108,6 +110,7 @@ data class Project(
         put("singersText", singersText)
         put("palettesText", palettesText)
         put("activeGroup", activeGroup)
+        put("thumbExport", thumbExport)
         put("thumbBgOn", thumbBgOn)
         put("thumbBgTime", thumbBgTime)
         put("thumbBgDim", thumbBgDim)
@@ -164,6 +167,7 @@ data class Project(
                 singersText = j.optString("singersText", d.singersText),
                 palettesText = j.optString("palettesText", d.palettesText),
                 activeGroup = j.optString("activeGroup", d.activeGroup),
+                thumbExport = j.optBoolean("thumbExport", d.thumbExport),
                 thumbBgOn = j.optBoolean("thumbBgOn", d.thumbBgOn),
                 thumbBgTime = j.optDouble("thumbBgTime", d.thumbBgTime),
                 thumbBgDim = j.optInt("thumbBgDim", d.thumbBgDim),

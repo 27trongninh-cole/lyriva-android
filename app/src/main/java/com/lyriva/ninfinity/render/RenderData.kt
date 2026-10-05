@@ -85,7 +85,7 @@ class RenderData(
                 p.bgFit == BgFit.COVER,
                 p.bgZoom, p.bgPanX, p.bgPanY, p.bgDim,
                 p.leadMs.coerceIn(0, 600) / 1000.0,
-                p.thumbEnabled,
+                false, // thumbnail không còn chèn vào đầu video, được xuất riêng thành ảnh PNG
                 p.thumbDuration.coerceIn(0.02, 0.5),
                 p.thumbBgOn && p.bgUri != null,
                 p.thumbBgDim.coerceIn(0, 95)

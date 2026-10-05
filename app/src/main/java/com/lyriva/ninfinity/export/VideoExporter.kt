@@ -34,6 +34,9 @@ import kotlin.math.min
  * Dựng MP4 (H.264 + AAC) ngoại tuyến: vẽ từng khung với mốc thời gian chính xác ở 30fps rồi mã hóa phần cứng.
  * Không ghi theo thời gian thực nên không bị rớt khung khi máy chậm, tiếng luôn khớp hình.
  */
+/** Kết quả xuất: video MP4 và ảnh bìa PNG (null nếu tắt hoặc lưu lỗi). */
+class ExportResult(val video: Uri, val cover: Uri?)
+
 object VideoExporter {
     private const val FPS = 30
     private const val FPS_FAST = 24
@@ -49,7 +52,7 @@ object VideoExporter {
         p: Project,
         onProgress: (Float, String) -> Unit,
         cancelled: () -> Boolean
-    ): Uri {
+    ): ExportResult {
         val app = ctx.applicationContext
         val audioUri = Uri.parse(p.audioUri ?: throw IllegalStateException("Chưa có nhạc"))
         val s = p.cutStart
@@ -233,8 +236,19 @@ object VideoExporter {
             bgf?.close()
             if (ok) MediaSaver.finishVideo(app, pending) else MediaSaver.discardVideo(app, pending)
         }
+        // ảnh bìa xuất kèm video (TikTok cho tải ảnh bìa riêng)
+        var coverUri: Uri? = null
+        if (p.thumbExport) {
+            try {
+                val cr = LyricsRenderer(Fonts(app), logo)
+                cr.data = data
+                cr.thumbBg = renderer.thumbBg
+                coverUri = MediaSaver.savePng(app, TextUtils.fileStem(p.title) + "_cover.png", cr.thumb.renderCover())
+            } catch (_: Exception) {
+            }
+        }
         onProgress(1f, "Hoàn tất")
-        return pending.uri
+        return ExportResult(pending.uri, coverUri)
     }
 
     private fun encodeAudio(pcm: Pcm, cancelled: () -> Boolean): EncodedAudio {
