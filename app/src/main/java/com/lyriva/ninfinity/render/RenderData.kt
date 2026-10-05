@@ -1,6 +1,7 @@
 package com.lyriva.ninfinity.render
 
 import com.lyriva.ninfinity.core.Hide
+import com.lyriva.ninfinity.core.HookSpec
 import com.lyriva.ninfinity.core.LrcParser
 import com.lyriva.ninfinity.core.LrcWord
 import com.lyriva.ninfinity.core.SingerPalette
@@ -37,14 +38,15 @@ class RenderData(
     val thumbOn: Boolean,
     val thumbDur: Double,
     val thumbBgOn: Boolean,
-    val thumbBgDim: Int
+    val thumbBgDim: Int,
+    val hook: HookSpec?
 ) {
     val width: Int get() = if (vertical) 1080 else 1280
     val height: Int get() = if (vertical) 1920 else 720
 
     companion object {
         val EMPTY = RenderData(
-            emptyList(), "", "", "", Lang.EN, true, true, false, true, 100, 0, 0, 70, 0.1, false, 0.02, false, 60
+            emptyList(), "", "", "", Lang.EN, true, true, false, true, 100, 0, 0, 70, 0.1, false, 0.02, false, 60, null
         )
 
         fun from(p: Project): RenderData {
@@ -88,7 +90,8 @@ class RenderData(
                 false, // thumbnail không còn chèn vào đầu video, được xuất riêng thành ảnh PNG
                 p.thumbDuration.coerceIn(0.02, 0.5),
                 p.thumbBgOn && p.bgUri != null,
-                p.thumbBgDim.coerceIn(0, 95)
+                p.thumbBgDim.coerceIn(0, 95),
+                p.hookSpec()
             )
         }
     }

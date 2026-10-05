@@ -33,6 +33,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,7 +59,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.lyriva.ninfinity.AppViewModel
 import com.lyriva.ninfinity.audio.AudioDecoder
+import com.lyriva.ninfinity.audio.ChimePlayer
 import com.lyriva.ninfinity.core.Fade
+import com.lyriva.ninfinity.core.Hook
 import com.lyriva.ninfinity.core.LrcParser
 import com.lyriva.ninfinity.core.SingerPalette
 import com.lyriva.ninfinity.core.TextUtils
@@ -82,6 +85,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /** Khung xem thử vẽ bằng chính LyricsRenderer, co theo màn hình nhưng giữ đúng bố cục video thật. */
 @Composable
@@ -131,6 +135,14 @@ private fun PlayerBar(
     }
 }
 
+private fun hookPresets(l: Lang): List<String> = when (l) {
+    Lang.EN -> listOf("Do you remember this song?", "Can you *rap* this?", "Sing along if you know this one", "Which line is your favorite?")
+    Lang.VN -> listOf("Bạn còn nhớ bài hát này chứ?", "Bạn có hát theo được không?", "Câu nào là câu bạn thích nhất?")
+    Lang.KR -> listOf("이 노래 기억나요?", "같이 *불러* 볼까요?", "가장 좋아하는 부분은?")
+    Lang.JP -> listOf("この曲 覚えてる？", "一緒に *歌え* る？", "好きな 部分は どこ？")
+    Lang.CN -> listOf("还记得 这首歌 吗？", "你能 *唱出来* 吗？", "最喜欢 哪一句？")
+}
+
 private val TOOLS = listOf(
     "Nguồn" to Ic.WAVE, "Bài hát" to Ic.MUSIC, "Lời phụ" to Ic.SUB, "Nền" to Ic.FILM,
     "Khung" to Ic.CROP, "Bìa" to Ic.IMG, "Hiệu ứng" to Ic.SPARK, "Xuất" to Ic.UP
@@ -148,6 +160,8 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
     var phuTab by rememberSaveable { mutableStateOf(0) }
     var biaTab by rememberSaveable { mutableStateOf(0) }
     var showPalette by remember { mutableStateOf(false) }
+    var fxTab by rememberSaveable { mutableStateOf(0) }
+    var presetIdx by remember { mutableStateOf(0) }
     val groups = remember(p.palettesText) { SingerPalette.parse(p.palettesText) }
     val groupNames = listOf("Tự động") + groups.map { it.name.ifEmpty { "(không tên)" } }
     val gi = if (p.activeGroup.isEmpty()) 0 else groups.indexOfFirst { it.name == p.activeGroup }.let { if (it < 0) 0 else it + 1 }
@@ -175,8 +189,10 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
     var playing by remember { mutableStateOf(false) }
     val fadeInNow by rememberUpdatedState(p.fadeIn)
     val fadeOutNow by rememberUpdatedState(p.fadeOut)
+    val hookSpec = remember(p.hookOn, p.hookText, p.hookGap, p.hookSound, p.hookSeed, p.hookVol) { p.hookSpec() }
+    val hookNow by rememberUpdatedState(hookSpec)
     val pos = rememberPlayerPos(player) { t ->
-        player?.volume = Fade.gain(t - s, eNow - s, fadeInNow, fadeOutNow)
+        player?.volume = Fade.gain(t - s, eNow - s, fadeInNow, fadeOutNow) * (hookNow?.let { Hook.duck(t - s, it) } ?: 1f)
         if (durGuess == 0.0) {
             val d = player?.duration ?: 0L
             if (d > 0) durGuess = d / 1000.0
@@ -191,19 +207,58 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
         player?.pause()
         playing = false
     }
+    // ---- tiếng chuông của hook trong bản xem thử ----
+    val chime = remember { ChimePlayer() }
+    DisposableEffect(Unit) { onDispose { chime.stop() } }
+    var chimeSamples by remember { mutableStateOf<ShortArray?>(null) }
+    var autoPlayChime by remember { mutableStateOf(false) }
+    LaunchedEffect(hookSpec) {
+        chimeSamples = null
+        val sp = hookSpec
+        if (sp != null) {
+            val cs = withContext(Dispatchers.Default) { Hook.synth(sp, Hook.SR) }
+            chimeSamples = cs
+            if (autoPlayChime) {
+                autoPlayChime = false
+                chime.play(cs, Hook.SR, 0.0)
+            }
+        }
+    }
+    fun restartChime(t: Double) {
+        chime.stop()
+        val cs = chimeSamples
+        if (hookSpec != null && cs != null) chime.play(cs, Hook.SR, t)
+    }
+    var seekToken by remember { mutableStateOf(0) }
     fun toggle() {
         val pl = player ?: return
         if (playing) {
             pl.pause()
             playing = false
+            chime.stop()
         } else {
-            if (pos.value >= e - 0.05 || pos.value < s - 0.05) pl.seekTo((s * 1000).toLong())
+            var startT = max(0.0, pos.value - s)
+            if (pos.value >= e - 0.05 || pos.value < s - 0.05) {
+                pl.seekTo((s * 1000).toLong())
+                startT = 0.0
+            }
             pl.playWhenReady = true
             playing = true
+            restartChime(startT)
         }
     }
     fun seekFrac(f: Float) {
-        player?.seekTo(((s + f * (e - s)) * 1000).toLong())
+        val t = f * (e - s)
+        player?.seekTo(((s + t) * 1000).toLong())
+        chime.stop()
+        if (playing) {
+            seekToken++
+            val tok = seekToken
+            scope.launch {
+                delay(250)
+                if (tok == seekToken && playing) restartChime(max(0.0, pos.value - s))
+            }
+        }
     }
 
     // ---- khung video nền cho xem thử ----
@@ -324,7 +379,7 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
     val label = TimeUtils.fmtShort(max(0.0, pos.value - s)) + " / " + TimeUtils.fmtShort(max(0.0, e - s))
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val sheetH = (maxHeight * 0.45f).coerceIn(250.dp, 340.dp)
+        val sheetH = (maxHeight * 0.45f).coerceIn(300.dp, 350.dp)
         Column(Modifier.fillMaxSize()) {
             // ---------- sân khấu xem thử (luôn cùng kích thước) ----------
             Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
@@ -346,7 +401,7 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
             Column(
                 Modifier.fillMaxWidth().height(sheetH).background(Lc.Card)
                     .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 when (tool) {
                     0 -> {
@@ -403,7 +458,7 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                             SwitchLine("Hiện Vietsub", null, p.vietsubOn) { v -> vm.update { it.copy(vietsubOn = v) } }
                             TextArea(
                                 p.vietsubText, { v -> vm.update { it.copy(vietsubText = v) } },
-                                Modifier.height(88.dp), "Dán bản dịch, mỗi dòng một câu…", size = 14
+                                Modifier.height(72.dp), "Dán bản dịch, mỗi dòng một câu…", size = 14
                             )
                             Note("Dòng n ứng với câu n. Dùng //…// để ẩn phần không muốn hiện.", 1)
                             if (p.language.fontName != null) {
@@ -424,7 +479,6 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                                 TextBtn("›") { stepGroup(1) }
                                 Btn("Sửa", { showPalette = true }, Modifier.width(72.dp), small = true)
                             }
-                            Note("Nhiều người cùng hát: ngăn cách bằng dấu phẩy hoặc &.", 1)
                         }
                     }
                     3 -> {
@@ -480,21 +534,61 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                             SliderRow("Độ tối", p.thumbBgDim.toFloat(), 20f..90f, "${p.thumbBgDim}%") { v -> vm.update { it.copy(thumbBgDim = v.roundToInt()) } }
                             Note(
                                 if (p.bgUri == null) "Cần chọn video nền ở bảng Nền trước."
-                                else "Tua bản xem thử tới khung đẹp rồi bấm Lấy khung hiện tại.", 2
+                                else "Tua xem thử tới khung đẹp rồi bấm Lấy khung hiện tại.", 1
                             )
                         }
                     }
                     6 -> {
-                        SliderRow("Hiện lời sớm", p.leadMs.toFloat(), 0f..600f, "${p.leadMs}ms") { v ->
-                            vm.update { it.copy(leadMs = (v / 10f).roundToInt() * 10) }
+                        Seg(listOf("Chung", "Hook", "Âm hook"), fxTab, { fxTab = it })
+                        when (fxTab) {
+                            0 -> {
+                                SliderRow("Hiện lời sớm", p.leadMs.toFloat(), 0f..600f, "${p.leadMs}ms") { v ->
+                                    vm.update { it.copy(leadMs = (v / 10f).roundToInt() * 10) }
+                                }
+                                SliderRow("Nhạc vào dần", p.fadeIn.toFloat(), 0f..8f, String.format(Locale.US, "%.1fs", p.fadeIn)) { v ->
+                                    vm.update { it.copy(fadeIn = (v * 2).roundToInt() / 2.0) }
+                                }
+                                SliderRow("Nhạc ra dần", p.fadeOut.toFloat(), 0f..8f, String.format(Locale.US, "%.1fs", p.fadeOut)) { v ->
+                                    vm.update { it.copy(fadeOut = (v * 2).roundToInt() / 2.0) }
+                                }
+                                Note("Nhạc vào/ra dần nghe được ngay ở bản xem thử và có trong video xuất.", 1)
+                            }
+                            1 -> {
+                                val presets = hookPresets(p.language)
+                                val pi = presetIdx.coerceIn(0, presets.size - 1)
+                                SwitchLine("Hiện hook đầu video", null, p.hookOn) { v -> vm.update { it.copy(hookOn = v) } }
+                                LField("Câu hook", p.hookText, { v -> vm.update { it.copy(hookText = v) } }, placeholder = "Can you *rap* this?")
+                                Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Mẫu", color = Lc.Mute, fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(40.dp))
+                                    TextBtn("‹") { presetIdx = (pi - 1 + presets.size) % presets.size }
+                                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                        Text(presets[pi].replace("*", ""), color = Lc.Ink, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    TextBtn("›") { presetIdx = (pi + 1) % presets.size }
+                                    Btn("Dùng", { vm.update { it.copy(hookText = presets[pi], hookOn = true) } }, Modifier.width(72.dp), small = true)
+                                }
+                                Note("Mỗi cụm cách nhau bằng dấu cách là một tiếng chuông. *chữ* để bôi màu.", 1)
+                            }
+                            else -> {
+                                Seg(Hook.SOUNDS, p.hookSound, { i -> vm.update { it.copy(hookSound = i) } })
+                                SliderRow("Nhịp", p.hookGap.toFloat(), 0.15f..0.8f, String.format(Locale.US, "%.2fs", p.hookGap)) { v ->
+                                    vm.update { it.copy(hookGap = (v * 20).roundToInt() / 20.0) }
+                                }
+                                SliderRow("Âm lượng", p.hookVol.toFloat(), 0f..100f, "${p.hookVol}%") { v ->
+                                    vm.update { it.copy(hookVol = v.roundToInt()) }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Btn(
+                                        "Nghe thử", { chimeSamples?.let { chime.play(it, Hook.SR, 0.0) } },
+                                        Modifier.weight(1f), small = true, icon = Ic.PLAY, enabled = chimeSamples != null
+                                    )
+                                    Btn("Đổi ngẫu nhiên", {
+                                        autoPlayChime = true
+                                        vm.update { it.copy(hookSeed = Random.nextInt(1, 1_000_000)) }
+                                    }, Modifier.weight(1f), small = true, enabled = p.hookOn && p.hookText.isNotBlank())
+                                }
+                            }
                         }
-                        SliderRow("Nhạc vào dần", p.fadeIn.toFloat(), 0f..8f, String.format(Locale.US, "%.1fs", p.fadeIn)) { v ->
-                            vm.update { it.copy(fadeIn = (v * 2).roundToInt() / 2.0) }
-                        }
-                        SliderRow("Nhạc ra dần", p.fadeOut.toFloat(), 0f..8f, String.format(Locale.US, "%.1fs", p.fadeOut)) { v ->
-                            vm.update { it.copy(fadeOut = (v * 2).roundToInt() / 2.0) }
-                        }
-                        Note("Nhạc vào/ra dần áp dụng cho tiếng của video xuất và nghe được ngay ở bản xem thử.", 2)
                     }
                     else -> {
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -567,14 +661,15 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                 Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconBtn(Ic.X, { showPalette = false })
                     Text("Bảng màu ca sĩ", color = Lc.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Box(Modifier.weight(1f))
+                    Btn("Xong", { showPalette = false }, Modifier.width(88.dp), primary = true, small = true)
                 }
-                Note("Mỗi nhóm bắt đầu bằng dòng “Tên nhóm: …”, sau đó mỗi dòng “Tên: #RRGGBB”. Màu chỉ áp dụng cho tên người hát.", 3)
+                Note("Mỗi nhóm bắt đầu bằng dòng “Tên nhóm: …”, sau đó mỗi dòng “Tên: #RRGGBB”. Màu chỉ áp dụng cho tên người hát.", 2)
                 TextArea(
                     p.palettesText, { v -> vm.update { it.copy(palettesText = v) } }, Modifier.weight(1f),
                     "Tên nhóm: CORTIS\nJames: #123456\nMartin: #234567", size = 14
                 )
                 Note("Đọc được ${groups.size} nhóm, ${groups.sumOf { it.members.size }} màu.", 1)
-                Btn("Xong", { showPalette = false }, Modifier.fillMaxWidth(), primary = true)
             }
         }
     }

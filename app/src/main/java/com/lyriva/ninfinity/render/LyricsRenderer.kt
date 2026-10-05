@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import com.lyriva.ninfinity.core.Hook
+import com.lyriva.ninfinity.core.HookSpec
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -251,6 +253,79 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
         txt(disp(x), tx, y, MUTE, al)
     }
 
+    // ---------- hook đầu video ----------
+    private class HookLay(val key: String, val z: Float, val xs: FloatArray, val ys: FloatArray, val main: Boolean)
+
+    private var hookLay: HookLay? = null
+
+    private fun hookLayout(h: HookSpec, wF: Float, hF: Float, u: Float, mx: Float, mw: Float, vert: Boolean): HookLay {
+        val key = "$ver|$wF|$hF|${fonts.epoch}"
+        hookLay?.let { if (it.key == key) return it }
+        val n = h.n
+        val main = data.lang.fontName != null && h.words.any { CJR.containsMatchIn(it) }
+        var z = u * 0.075f
+        val widths = FloatArray(n)
+        val lines = ArrayList<IntRange>()
+        var space = 0f
+        for (k in 0 until 24) {
+            setFont(z, 600, main, 0f)
+            space = p.measureText(" ")
+            for (i in 0 until n) widths[i] = p.measureText(h.words[i])
+            lines.clear()
+            var s0 = 0
+            var lw = 0f
+            for (i in 0 until n) {
+                val add = if (i == s0) widths[i] else lw + space + widths[i]
+                if (i > s0 && add > mw) {
+                    lines.add(s0 until i)
+                    s0 = i
+                    lw = widths[i]
+                } else {
+                    lw = add
+                }
+            }
+            lines.add(s0 until n)
+            if (lines.size <= 3 && widths.max() <= mw) break
+            z *= 0.92f
+        }
+        val xs = FloatArray(n)
+        val ys = FloatArray(n)
+        val lh = z * 1.25f
+        val cy = hF * (if (vert) 0.29f else 0.3f)
+        lines.forEachIndexed { li, r ->
+            var total = 0f
+            for (i in r) total += widths[i] + (if (i > r.first) space else 0f)
+            var x = mx + (mw - total) / 2f
+            val y = cy + (li - (lines.size - 1) / 2f) * lh + z * 0.35f
+            for (i in r) {
+                xs[i] = x
+                ys[i] = y
+                x += widths[i] + space
+            }
+        }
+        val out = HookLay(key, z, xs, ys, main)
+        hookLay = out
+        return out
+    }
+
+    /** Từng cụm chữ hiện đúng lúc có tiếng chuông, giữ một lúc rồi mờ dần. */
+    private fun drawHook(h: HookSpec, t: Double, wF: Float, hF: Float, u: Float, mx: Float, mw: Float, vert: Boolean) {
+        val tEnd = h.endTime
+        if (t < h.t0 || t > tEnd + Hook.FADE) return
+        val L = hookLayout(h, wF, hF, u, mx, mw, vert)
+        val gAll = if (t <= tEnd) 1f else 1f - eo(((t - tEnd) / Hook.FADE).toFloat())
+        setFont(L.z, 600, L.main, 0f)
+        p.setShadowLayer(u * 0.012f, 0f, 0f, Color.argb(140, 0, 0, 0))
+        for (i in 0 until h.n) {
+            val ti = h.wordTime(i)
+            if (t < ti) break
+            val e = eo(((t - ti) / 0.16).toFloat())
+            val dy = (1f - e) * L.z * 0.25f
+            txt(h.words[i], L.xs[i], L.ys[i] + dy, if (h.hi[i]) acc else INK, e * gAll)
+        }
+        p.clearShadowLayer()
+    }
+
     // ---------- logo ----------
     private fun logo(): Bitmap {
         val key = acc
@@ -384,6 +459,8 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
                 gry(nx, gz, by + bh(cu, Lc) + gz * 1.3f + (1f - e) * u * 0.03f, 0.9f * (if (k == 0) ap else e), w2, tx)
             }
         }
+
+        d.hook?.let { drawHook(it, t, wF, hF, u, mx, mw, V) }
 
         val lw = u * (if (V) 0.13f else 0.11f)
         drawLogo(canvas, mx - lw * 0.04f, 0f, lw, hF * (if (V) 0.76f else 0.8f))

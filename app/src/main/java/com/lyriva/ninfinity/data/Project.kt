@@ -1,5 +1,7 @@
 package com.lyriva.ninfinity.data
 
+import com.lyriva.ninfinity.core.Hook
+import com.lyriva.ninfinity.core.HookSpec
 import com.lyriva.ninfinity.core.SyncMode
 import org.json.JSONArray
 import org.json.JSONObject
@@ -67,6 +69,13 @@ data class Project(
     val thumbBgOn: Boolean = false,
     val thumbBgTime: Double = 0.0,
     val thumbBgDim: Int = 60,
+    // hook đầu video: chữ hiện từng cụm kèm tiếng chuông
+    val hookOn: Boolean = false,
+    val hookText: String = "",
+    val hookGap: Double = 0.35,
+    val hookSound: Int = 0,
+    val hookSeed: Int = 1,
+    val hookVol: Int = 70,
     // nhạc vào dần / ra dần (giây)
     val fadeIn: Double = 0.0,
     val fadeOut: Double = 0.0,
@@ -75,6 +84,9 @@ data class Project(
     val thumbDuration: Double = 0.02,
     val thumbGridPos: Int = 0
 ) {
+    /** Cấu hình hook hiện tại, null nếu tắt hoặc chưa có chữ. */
+    fun hookSpec(): HookSpec? = Hook.spec(hookOn, hookText, hookGap, hookSound, hookSeed, hookVol / 100f)
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("audioUri", audioUri ?: JSONObject.NULL)
         put("sourceName", sourceName)
@@ -114,6 +126,12 @@ data class Project(
         put("thumbBgOn", thumbBgOn)
         put("thumbBgTime", thumbBgTime)
         put("thumbBgDim", thumbBgDim)
+        put("hookOn", hookOn)
+        put("hookText", hookText)
+        put("hookGap", hookGap)
+        put("hookSound", hookSound)
+        put("hookSeed", hookSeed)
+        put("hookVol", hookVol)
         put("fadeIn", fadeIn)
         put("fadeOut", fadeOut)
         put("thumbEnabled", thumbEnabled)
@@ -171,6 +189,12 @@ data class Project(
                 thumbBgOn = j.optBoolean("thumbBgOn", d.thumbBgOn),
                 thumbBgTime = j.optDouble("thumbBgTime", d.thumbBgTime),
                 thumbBgDim = j.optInt("thumbBgDim", d.thumbBgDim),
+                hookOn = j.optBoolean("hookOn", d.hookOn),
+                hookText = j.optString("hookText", d.hookText),
+                hookGap = j.optDouble("hookGap", d.hookGap),
+                hookSound = j.optInt("hookSound", d.hookSound),
+                hookSeed = j.optInt("hookSeed", d.hookSeed),
+                hookVol = j.optInt("hookVol", d.hookVol),
                 fadeIn = j.optDouble("fadeIn", d.fadeIn),
                 fadeOut = j.optDouble("fadeOut", d.fadeOut),
                 thumbEnabled = j.optBoolean("thumbEnabled", d.thumbEnabled),

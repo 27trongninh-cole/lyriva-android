@@ -24,8 +24,11 @@ object SingerPalette {
     private val SPLIT = Regex("\\s*[,&/+]\\s*")
     private val HEADERS = setOf("ten nhom", "nhom", "group", "group name", "team", "ten team")
 
-    /** Màu tự gán cho tên chưa có trong bảng, theo thứ tự xuất hiện. */
-    val AUTO = intArrayOf(0xF2C14E, 0x6FA8FF, 0xF28CAB, 0x7DD3A8, 0xFF9F68, 0xB794F6, 0x5EEAD4, 0xF87171)
+    /**
+     * Màu tự gán cho tên chưa có trong bảng, theo thứ tự xuất hiện. Cố ý không dùng các màu của
+     * ngôn ngữ (tím, vàng, xanh dương, hồng, đỏ) để nhãn người hát không bao giờ giống màu theo quốc gia.
+     */
+    val AUTO = intArrayOf(0x5EEAD4, 0xFF9F68, 0xBEF264, 0x22D3EE, 0xE879F9, 0x86EFAC)
 
     fun norm(s: String): String =
         Normalizer.normalize(s.trim().lowercase(), Normalizer.Form.NFD).replace(MARKS, "").replace('đ', 'd')

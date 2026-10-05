@@ -344,9 +344,9 @@ fun SliderRow(
     shown: String,
     onChange: (Float) -> Unit
 ) {
-    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = Lc.Mute, fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(92.dp))
-        Box(Modifier.weight(1f).height(48.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f).height(44.dp), contentAlignment = Alignment.Center) {
             Slider(
                 value = value, onValueChange = onChange, valueRange = range,
                 colors = SliderDefaults.colors(
