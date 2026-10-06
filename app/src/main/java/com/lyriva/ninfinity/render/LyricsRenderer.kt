@@ -476,7 +476,8 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
             }
         }
 
-        d.hook?.let { drawHook(it, t, wF, hF, u, mx, mw, V) }
+        // hook căn giữa đúng tâm khung hình: lề hai bên bằng nhau (theo lề phải chừa cho nút TikTok)
+        d.hook?.let { drawHook(it, t, wF, hF, u, rr, wF - 2f * rr, V) }
 
         val lw = u * (if (V) 0.13f else 0.11f)
         drawLogo(canvas, mx - lw * 0.04f, 0f, lw, hF * (if (V) 0.76f else 0.8f))
