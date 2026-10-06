@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -60,24 +61,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var analyzeError by mutableStateOf<String?>(null)
         private set
 
+    var analyzeProgress by mutableFloatStateOf(0f)
+        private set
+
     fun analyze(uriStr: String) {
         if (analyzing) return
         analyzing = true
         analyzeError = null
+        analyzeProgress = 0f
         viewModelScope.launch {
             try {
                 val d = withContext(Dispatchers.Default) {
-                    AudioDecoder.peaks(getApplication(), Uri.parse(uriStr))
+                    AudioDecoder.peaks(getApplication(), Uri.parse(uriStr), 50) { f -> analyzeProgress = f }
                 }
                 peaks = d.copy(uri = uriStr)
                 update {
                     if (it.audioUri == uriStr && it.cutEnd <= it.cutStart) it.copy(cutStart = 0.0, cutEnd = d.duration) else it
                 }
-            } catch (e: Exception) {
-                analyzeError = "Không đọc được âm thanh từ file này. Thử MP3, WAV, M4A hoặc MP4."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // bắt cả lỗi hết bộ nhớ hay lỗi bộ giải mã để không chết lặng lẽ ở nền
+                analyzeError = "Không phân tích được âm thanh (" + (e.message ?: e.javaClass.simpleName) + ")."
                 peaks = null
+            } finally {
+                analyzing = false
             }
-            analyzing = false
         }
     }
 

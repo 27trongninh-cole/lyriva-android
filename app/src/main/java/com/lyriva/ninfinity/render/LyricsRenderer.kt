@@ -47,6 +47,9 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private lateinit var cv: Canvas
+
+    /** Hệ số hiện của lời (0 khi hook đang chiếm màn hình, rồi hiện dần lại). */
+    private var gate = 1f
     private var logoTinted: Bitmap? = null
     private var logoKey = 0
     val thumb = ThumbnailRenderer(this)
@@ -193,7 +196,8 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
     }
 
     // ---------- câu đang hát / câu mờ ----------
-    private fun act(x: LyricItem, L: Lay, by: Float, al: Float, fr: Float, mx: Float, tx: Float, u: Float, mw: Float) {
+    private fun act(x: LyricItem, L: Lay, by: Float, al0: Float, fr: Float, mx: Float, tx: Float, u: Float, mw: Float) {
+        val al = al0 * gate
         if (disp(x).isEmpty() || al <= 0.01f) return
         val lh = L.z * LH
         val r = rom(x)
@@ -247,14 +251,15 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
         }
     }
 
-    private fun gry(x: LyricItem?, z: Float, y: Float, al: Float, mw: Float, tx: Float) {
+    private fun gry(x: LyricItem?, z: Float, y: Float, al0: Float, mw: Float, tx: Float) {
+        val al = al0 * gate
         if (x == null || disp(x).isEmpty() || al <= 0.01f) return
         fit(disp(x), z, mw, 400, 0f, mainOf(x))
         txt(disp(x), tx, y, MUTE, al)
     }
 
     // ---------- hook đầu video ----------
-    private class HookLay(val key: String, val z: Float, val xs: FloatArray, val ys: FloatArray, val main: Boolean)
+    private class HookLay(val key: String, val z: Float, val xs: FloatArray, val ys: FloatArray, val ws: FloatArray, val main: Boolean)
 
     private var hookLay: HookLay? = null
 
@@ -263,7 +268,7 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
         hookLay?.let { if (it.key == key) return it }
         val n = h.n
         val main = data.lang.fontName != null && h.words.any { CJR.containsMatchIn(it) }
-        var z = u * 0.075f
+        var z = u * 0.095f
         val widths = FloatArray(n)
         val lines = ArrayList<IntRange>()
         var space = 0f
@@ -291,7 +296,7 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
         val xs = FloatArray(n)
         val ys = FloatArray(n)
         val lh = z * 1.25f
-        val cy = hF * (if (vert) 0.29f else 0.3f)
+        val cy = hF * (if (vert) 0.48f else 0.5f) // giữa màn hình (nhích lên chút để tránh vùng caption của TikTok)
         lines.forEachIndexed { li, r ->
             var total = 0f
             for (i in r) total += widths[i] + (if (i > r.first) space else 0f)
@@ -303,7 +308,7 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
                 x += widths[i] + space
             }
         }
-        val out = HookLay(key, z, xs, ys, main)
+        val out = HookLay(key, z, xs, ys, widths.copyOf(), main)
         hookLay = out
         return out
     }
@@ -320,8 +325,12 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
             val ti = h.wordTime(i)
             if (t < ti) break
             val e = eo(((t - ti) / 0.16).toFloat())
-            val dy = (1f - e) * L.z * 0.25f
-            txt(h.words[i], L.xs[i], L.ys[i] + dy, if (h.hi[i]) acc else INK, e * gAll)
+            // mỗi cụm "nảy" từ to xuống đúng cỡ, kéo mắt người xem vào chữ
+            val sc = 1f + (1f - e) * 0.3f
+            cv.save()
+            cv.scale(sc, sc, L.xs[i] + L.ws[i] / 2f, L.ys[i] - L.z * 0.35f)
+            txt(h.words[i], L.xs[i], L.ys[i], if (h.hi[i]) acc else INK, e * gAll)
+            cv.restore()
         }
         p.clearShadowLayer()
     }
@@ -418,7 +427,14 @@ class LyricsRenderer(val fonts: Fonts, private val logoSrc: Bitmap) {
             p.clearShadowLayer()
         }
 
-        // lời
+        // lời: ẩn hẳn trong lúc hook hiện để người xem chú ý hook trước, rồi hiện dần lại
+        val hk = d.hook
+        gate = when {
+            hk == null -> 1f
+            t < hk.endTime -> 0f
+            t < hk.endTime + Hook.FADE -> eo(((t - hk.endTime) / Hook.FADE).toFloat())
+            else -> 1f
+        }
         val items = d.items
         if (items.isNotEmpty()) {
             fun ts(j: Int): Double =

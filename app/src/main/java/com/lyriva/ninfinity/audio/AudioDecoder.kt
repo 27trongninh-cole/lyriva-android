@@ -8,7 +8,6 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.lyriva.ninfinity.export.ExportCancelled
 import java.nio.ByteOrder
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -21,6 +20,7 @@ class Pcm(val samples: ShortArray, val sampleRate: Int, val channels: Int)
 
 /** Giải mã theo luồng bằng MediaExtractor + MediaCodec nên không nạp cả file vào RAM. */
 object AudioDecoder {
+    private const val STALL_NS = 10_000_000_000L // 10 giây không có tiến triển thì dừng và báo lỗi
 
     private fun openAudio(ctx: Context, uri: Uri): Pair<MediaExtractor, MediaFormat> {
         val ex = MediaExtractor()
@@ -41,11 +41,17 @@ object AudioDecoder {
         throw IllegalStateException("File này không có âm thanh")
     }
 
-    /** cb(shorts, số mẫu, sampleRate, channels, thời điểm bắt đầu buffer): trả false để dừng. */
+    /**
+     * cb(shorts, số mẫu, sampleRate, channels, thời điểm bắt đầu buffer): trả false để dừng.
+     * Vòng lặp nạp hết buffer đầu vào trống rồi rút hết đầu ra, chỉ chờ khi thật sự không có việc,
+     * nên chạy nhanh hơn thời gian thực hàng chục lần.
+     */
     private fun run(
         ctx: Context,
         uri: Uri,
         startSec: Double,
+        cancelled: () -> Boolean = { false },
+        progress: ((Float) -> Unit)? = null,
         cb: (ShortArray, Int, Int, Int, Double) -> Boolean
     ) {
         val (ex, fmt) = openAudio(ctx, uri)
@@ -59,31 +65,45 @@ object AudioDecoder {
             }
             var sr = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var ch = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            val durUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
             val info = MediaCodec.BufferInfo()
             var inDone = false
             var outDone = false
             var scratch = ShortArray(0)
+            var lastProgress = System.nanoTime()
+            var lastReport = 0L
             while (!outDone) {
-                if (!inDone) {
-                    val ii = codec.dequeueInputBuffer(10_000)
-                    if (ii >= 0) {
-                        val ib = codec.getInputBuffer(ii)!!
-                        val n = ex.readSampleData(ib, 0)
-                        if (n < 0) {
-                            codec.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inDone = true
-                        } else {
-                            codec.queueInputBuffer(ii, 0, n, ex.sampleTime, 0)
-                            ex.advance()
-                        }
+                if (cancelled()) throw ExportCancelled()
+                var progressed = false
+                // 1) nạp hết các buffer đầu vào đang trống
+                while (!inDone) {
+                    val ii = codec.dequeueInputBuffer(0)
+                    if (ii < 0) break
+                    val ib = codec.getInputBuffer(ii)!!
+                    val n = ex.readSampleData(ib, 0)
+                    if (n < 0) {
+                        codec.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inDone = true
+                    } else {
+                        codec.queueInputBuffer(ii, 0, n, ex.sampleTime, 0)
+                        ex.advance()
                     }
+                    progressed = true
                 }
-                val oi = codec.dequeueOutputBuffer(info, 10_000)
-                if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    val f = codec.outputFormat
-                    sr = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                    ch = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                } else if (oi >= 0) {
+                // 2) rút hết đầu ra; chỉ chờ ngắn ở lần đầu khi không nạp thêm được gì
+                var first = true
+                while (!outDone) {
+                    val oi = codec.dequeueOutputBuffer(info, if (first && !progressed) 2000 else 0)
+                    first = false
+                    if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) break
+                    progressed = true
+                    if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        val f = codec.outputFormat
+                        sr = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        ch = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        continue
+                    }
+                    if (oi < 0) continue
                     if (info.size > 0) {
                         val ob = codec.getOutputBuffer(oi)!!
                         ob.position(info.offset)
@@ -93,10 +113,20 @@ object AudioDecoder {
                         if (scratch.size < n) scratch = ShortArray(n)
                         sb.get(scratch, 0, n)
                         if (!cb(scratch, n, sr, ch, info.presentationTimeUs / 1_000_000.0)) outDone = true
+                        if (progress != null && durUs > 0) {
+                            val now = System.nanoTime()
+                            if (now - lastReport > 100_000_000L) {
+                                lastReport = now
+                                progress((info.presentationTimeUs.toDouble() / durUs).toFloat().coerceIn(0f, 1f))
+                            }
+                        }
                     }
                     codec.releaseOutputBuffer(oi, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outDone = true
                 }
+                val now = System.nanoTime()
+                if (progressed) lastProgress = now
+                else if (now - lastProgress > STALL_NS) throw IllegalStateException("Bộ giải mã âm thanh không phản hồi")
             }
         } finally {
             try { codec.stop() } catch (_: Exception) {}
@@ -105,31 +135,49 @@ object AudioDecoder {
         }
     }
 
-    /** Tính đỉnh biên độ cả bài (mặc định 50 giá trị mỗi giây). */
-    fun peaks(ctx: Context, uri: Uri, perSec: Int = 50): PeakData {
+    /** Tính đỉnh biên độ cả bài (mặc định 50 giá trị mỗi giây). [onProgress] 0..1. */
+    fun peaks(ctx: Context, uri: Uri, perSec: Int = 50, onProgress: (Float) -> Unit = {}): PeakData {
         var arr = FloatArray(perSec * 600)
-        var maxIdx = -1
-        run(ctx, uri, 0.0) { s, n, sr, ch, pts ->
-            val frames = n / ch
-            for (f in 0 until frames) {
-                var m = 0
-                val base = f * ch
-                for (c in 0 until ch) {
-                    val v = abs(s[base + c].toInt())
-                    if (v > m) m = v
+        var len = 0
+        var curMax = 0
+        var cnt = 0
+        var totalFrames = 0L
+        var rate = 44100
+        run(ctx, uri, 0.0, progress = onProgress) { s, n, sr, ch, _ ->
+            rate = sr
+            val win = max(1, sr / perSec) * ch // số mẫu (mọi kênh) trong một cửa sổ 20ms
+            totalFrames += n / ch
+            // dùng biến cục bộ trong vòng lặp nóng để tránh truy cập qua biến bắt (chậm)
+            var cm = curMax
+            var c = cnt
+            var l = len
+            var buf = arr
+            var i = 0
+            while (i < n) {
+                val v = s[i].toInt()
+                val a = if (v < 0) -v else v
+                if (a > cm) cm = a
+                i++
+                if (++c >= win) {
+                    if (l >= buf.size) buf = buf.copyOf(buf.size * 2)
+                    buf[l++] = cm / 32768f
+                    cm = 0
+                    c = 0
                 }
-                val idx = ((pts + f.toDouble() / sr) * perSec).toInt()
-                if (idx < 0) continue
-                if (idx >= arr.size) arr = arr.copyOf(max(arr.size * 2, idx + 1))
-                val fv = m / 32768f
-                if (fv > arr[idx]) arr[idx] = fv
-                if (idx > maxIdx) maxIdx = idx
             }
+            curMax = cm
+            cnt = c
+            len = l
+            arr = buf
             true
         }
-        val len = maxIdx + 1
+        if (cnt > 0) {
+            if (len >= arr.size) arr = arr.copyOf(arr.size + 1)
+            arr[len++] = curMax / 32768f
+        }
         if (len <= 0) throw IllegalStateException("Không đọc được âm thanh")
-        return PeakData(arr.copyOf(len), perSec, len.toDouble() / perSec, uri.toString())
+        val duration = totalFrames.toDouble() / rate
+        return PeakData(arr.copyOf(len), perSec, duration, uri.toString())
     }
 
     /** Giải mã đoạn [startSec, endSec) thành PCM 16-bit xen kẽ các kênh. */
@@ -144,8 +192,7 @@ object AudioDecoder {
         var len = 0
         var srOut = 44100
         var chOut = 2
-        run(ctx, uri, startSec) { s, n, sr, ch, pts ->
-            if (cancelled()) throw ExportCancelled()
+        run(ctx, uri, startSec, cancelled) { s, n, sr, ch, pts ->
             srOut = sr
             chOut = ch
             val frames = n / ch

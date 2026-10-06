@@ -136,13 +136,19 @@ private fun PageSource(vm: AppViewModel, next: () -> Unit) {
                 )
                 if (vm.analyzing) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Đang phân tích sóng nhạc…", color = Lc.Mute, fontSize = 13.sp)
+                        Text(
+                            "Đang phân tích sóng nhạc… ${(vm.analyzeProgress * 100).toInt()}%",
+                            color = Lc.Mute, fontSize = 13.sp
+                        )
                     }
                 }
                 val err = vm.analyzeError
                 if (err != null && pk == null && !vm.analyzing) {
                     Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                        Text(err, color = Lc.Mute, fontSize = 13.sp, textAlign = TextAlign.Center)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(err, color = Lc.Mute, fontSize = 13.sp, textAlign = TextAlign.Center, maxLines = 4)
+                            Btn("Thử lại", { p.audioUri?.let { vm.analyze(it) } }, Modifier.width(120.dp), small = true)
+                        }
                     }
                 }
             }

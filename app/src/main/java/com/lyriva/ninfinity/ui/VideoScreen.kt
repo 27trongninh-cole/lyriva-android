@@ -567,7 +567,7 @@ fun VideoScreen(vm: AppViewModel, openGrid: () -> Unit) {
                                     TextBtn("›") { presetIdx = (pi + 1) % presets.size }
                                     Btn("Dùng", { vm.update { it.copy(hookText = presets[pi], hookOn = true) } }, Modifier.width(72.dp), small = true)
                                 }
-                                Note("Mỗi cụm cách nhau bằng dấu cách là một tiếng chuông. *chữ* để bôi màu.", 1)
+                                Note("Hook hiện giữa màn hình, lời hiện sau đó. Cách nhau bằng dấu cách = một chuông.", 1)
                             }
                             else -> {
                                 Seg(Hook.SOUNDS, p.hookSound, { i -> vm.update { it.copy(hookSound = i) } })
